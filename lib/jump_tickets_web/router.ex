@@ -21,9 +21,12 @@ defmodule JumpTicketsWeb.Router do
   end
 
   # Other scopes may use custom stacks.
-  # scope "/api", JumpTicketsWeb do
-  #   pipe_through :api
-  # end
+  scope "/api", JumpTicketsWeb do
+    pipe_through :api
+
+    post "/initialize", IntercomController, :initialize
+    post "/submit", IntercomController, :submit
+  end
 
   # Enable LiveDashboard and Swoosh mailbox preview in development
   if Application.compile_env(:jump_tickets, :dev_routes) do
