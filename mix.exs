@@ -58,7 +58,8 @@ defmodule JumpTickets.MixProject do
       {:jason, "~> 1.2"},
       {:dns_cluster, "~> 0.1.1"},
       {:bandit, "~> 1.5"},
-      {:ecto_sqlite3, "~> 0.17"}
+      {:ecto_sqlite3, "~> 0.17"},
+      {:notionex, "~> 0.3.1"}
     ]
   end
 
