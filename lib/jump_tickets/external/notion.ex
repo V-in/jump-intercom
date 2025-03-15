@@ -10,22 +10,17 @@ defmodule JumpTickets.External.Notion do
       Notionex.API.query_database(%{database_id: db_id, page_size: 20})
       |> __MODULE__.Parser.parse_response()
 
+    # Notionex.API.update_page_properties()
     result
   end
 
   def create_ticket(%Ticket{} = ticket, db_id \\ @db_id) do
     properties = %{
-      "Id" => %{
-        title: [%{text: %{content: ticket.ticket_id}}]
-      },
       "Title" => %{
-        rich_text: [%{text: %{content: ticket.title}}]
+        title: [%{text: %{content: ticket.title}}]
       },
       "Intercom Conversations" => %{
         rich_text: [%{text: %{content: ticket.intercom_conversations}}]
-      },
-      "children" => %{
-        rich_text: [%{text: %{content: ticket.summary}}]
       },
       "Slack Channel" => %{
         rich_text: [%{text: %{content: ticket.slack_channel}}]
@@ -34,7 +29,23 @@ defmodule JumpTickets.External.Notion do
 
     Notionex.API.create_page(%{
       parent: %{database_id: db_id},
-      properties: properties
+      properties: properties,
+      children: [
+        %{
+          object: "block",
+          type: "paragraph",
+          paragraph: %{
+            rich_text: [
+              %{
+                type: "text",
+                text: %{
+                  content: ticket.summary
+                }
+              }
+            ]
+          }
+        }
+      ]
     })
   end
 end

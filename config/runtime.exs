@@ -20,6 +20,14 @@ if System.get_env("PHX_SERVER") do
   config :jump_tickets, JumpTicketsWeb.Endpoint, server: true
 end
 
+config :jump_tickets,
+       :intercom_token,
+       System.get_env("INTERCOM_SECRET")
+
+config :jump_tickets,
+       :claude_secret,
+       System.get_env("CLAUDE_SECRET")
+
 if config_env() == :prod do
   database_url =
     System.get_env("DATABASE_URL") ||
