@@ -39,7 +39,7 @@ defmodule JumpTickets.External.LLM do
           Enum.find(existing_tickets, fn ticket -> ticket.ticket_id == ticket_id end)
 
         if matching_ticket do
-          {:existing, matching_ticket}
+          {:ok, {:existing, matching_ticket}}
         else
           # Fallback if the ticket ID wasn't found (shouldn't happen)
           create_new_ticket_with_ai(conversation, message_body)
@@ -49,9 +49,7 @@ defmodule JumpTickets.External.LLM do
         create_new_ticket_with_ai(conversation, message_body)
 
       {:error, reason} ->
-        # Log the error and fallback to creating a new ticket
-        IO.puts("LLM error: #{inspect(reason)}. Falling back to creating new ticket.")
-        create_new_ticket_with_ai(conversation, message_body)
+        {:error, reason}
     end
   end
 
@@ -68,18 +66,10 @@ defmodule JumpTickets.External.LLM do
     # Get Claude's response with title and summary
     case request_claude_ticket_creation(prompt) do
       {:ok, %{"title" => title, "summary" => summary, "slug" => slug}} ->
-        {:new, %{title: title, summary: summary, slug: slug}}
+        {:ok, {:new, %{title: title, summary: summary, slug: slug}}}
 
       {:error, reason} ->
-        # Fallback with a generic title if Claude fails
-        IO.puts("LLM error during ticket creation: #{inspect(reason)}. Using fallback.")
-
-        {:new,
-         %{
-           title: "Support request from customer",
-           summary: "Unable to generate summary. Please review the conversation.",
-           slug: "support-request"
-         }}
+        {:error, reason}
     end
   end
 
@@ -87,13 +77,16 @@ defmodule JumpTickets.External.LLM do
   Formats a conversation into a string suitable for Claude's analysis
   """
   def format_conversation(%{messages: messages}) do
-    messages
-    |> Enum.map(fn %{text: text, author: author} ->
-      author_type = if String.contains?(author, "(admin)"), do: "Agent", else: "Customer"
-      author_name = author |> String.split(" (") |> List.first()
-      "#{author_type} (#{author_name}): #{text}"
-    end)
-    |> Enum.join("\n\n")
+    conversation =
+      messages
+      |> Enum.map(fn %{text: text, author: author} ->
+        author_type = if author.type == "admin", do: "Agent", else: "Customer"
+        author_name = author.name
+        "#{author_type} (#{author_name}): #{text}"
+      end)
+      |> Enum.join("\n\n")
+
+    conversation
   end
 
   @doc """

@@ -7,6 +7,10 @@
 # General application configuration
 import Config
 
+config :hackney,
+  # Receive timeout (in milliseconds)
+  recv_timeout: 30_000
+
 config :jump_tickets,
   ecto_repos: [JumpTickets.Repo],
   generators: [timestamp_type: :utc_datetime]

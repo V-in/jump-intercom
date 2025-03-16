@@ -1,4 +1,5 @@
 defmodule JumpTickets.External.Notion do
+  alias ElixirLS.LanguageServer.Parser
   alias JumpTickets.Ticket
   alias Notionex
   alias Notionex.API
@@ -10,8 +11,7 @@ defmodule JumpTickets.External.Notion do
       Notionex.API.query_database(%{database_id: db_id, page_size: 20})
       |> __MODULE__.Parser.parse_response()
 
-    # Notionex.API.update_page_properties()
-    result
+    {:ok, result}
   end
 
   def create_ticket(%Ticket{} = ticket, db_id \\ @db_id) do
@@ -21,32 +21,69 @@ defmodule JumpTickets.External.Notion do
       },
       "Intercom Conversations" => %{
         rich_text: [%{text: %{content: ticket.intercom_conversations}}]
-      },
-      "Slack Channel" => %{
-        rich_text: [%{text: %{content: ticket.slack_channel}}]
       }
     }
 
-    Notionex.API.create_page(%{
-      parent: %{database_id: db_id},
-      properties: properties,
-      children: [
-        %{
-          object: "block",
-          type: "paragraph",
-          paragraph: %{
-            rich_text: [
-              %{
-                type: "text",
-                text: %{
-                  content: ticket.summary
+    ticket =
+      Notionex.API.create_page(%{
+        parent: %{database_id: db_id},
+        properties: properties,
+        children: [
+          %{
+            object: "block",
+            type: "paragraph",
+            paragraph: %{
+              rich_text: [
+                %{
+                  type: "text",
+                  text: %{
+                    content: ticket.summary
+                  }
                 }
-              }
-            ]
+              ]
+            }
           }
-        }
-      ]
-    })
+        ]
+      })
+      |> JumpTickets.External.Notion.Parser.parse_ticket_page()
+
+    {:ok, ticket}
+  end
+
+  def update_ticket(page_id, properties_to_update) when is_map(properties_to_update) do
+    notion_properties =
+      properties_to_update
+      |> Enum.reduce(%{}, fn {key, value}, acc ->
+        case key do
+          :title ->
+            Map.put(acc, "Title", %{
+              title: [%{text: %{content: value}}]
+            })
+
+          :intercom_conversations ->
+            Map.put(acc, "Intercom Conversations", %{
+              rich_text: [%{text: %{content: value}}]
+            })
+
+          :slack_channel ->
+            Map.put(acc, "Slack Channel", %{
+              rich_text: [%{text: %{content: value}}]
+            })
+
+          _ ->
+            acc
+        end
+      end)
+
+    result =
+      Notionex.API.update_page_properties(%{
+        page_id: page_id,
+        properties: notion_properties
+      })
+
+    updated_ticket = result |> JumpTickets.External.Notion.Parser.parse_ticket_page()
+
+    {:ok, updated_ticket}
   end
 end
 
@@ -59,23 +96,32 @@ defmodule JumpTickets.External.Notion.Parser do
   def parse_response(response) do
     case response do
       %Notionex.Object.List{results: results} ->
-        Enum.map(results, &parse_ticket/1)
+        Enum.map(results, &parse_ticket_page/1)
 
       _ ->
         {:error, "Invalid response format"}
     end
   end
 
-  defp parse_ticket(page) do
-    properties = page["properties"]
+  def parse_ticket_page(page) do
+    notion_url = Map.get(page, "url", Map.get(page, :url))
+    notion_id = Map.get(page, "id", Map.get(page, :id))
+    properties = Map.get(page, "properties", Map.get(page, :properties))
 
     %Ticket{
-      ticket_id: extract_title(properties["Id"]),
-      title: extract_rich_text(properties["Title"]),
-      intercom_conversations: extract_rich_text(properties["Intercom Conversations"]),
-      summary: extract_rich_text(properties["children"]),
-      slack_channel: extract_rich_text(properties["Slack Channel"])
+      ticket_id: Map.get(properties, "ID") |> extract_id(),
+      notion_id: notion_id,
+      notion_url: notion_url,
+      title: Map.get(properties, "Title") |> extract_title(),
+      intercom_conversations:
+        Map.get(properties, "Intercom Conversations") |> extract_rich_text(),
+      summary: Map.get(properties, "children") |> extract_rich_text(),
+      slack_channel: Map.get(properties, "Slack Channel") |> extract_rich_text()
     }
+  end
+
+  defp extract_id(%{"unique_id" => %{"number" => number, "prefix" => prefix}}) do
+    "#{prefix}-#{number}"
   end
 
   # Extract plain text from a title property

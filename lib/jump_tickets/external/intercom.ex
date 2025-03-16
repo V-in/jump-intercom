@@ -17,6 +17,43 @@ defmodule JumpTickets.External.Intercom do
         {:error, "Failed to fetch conversation: #{inspect(reason)}"}
     end
   end
+
+  @doc """
+  Gets the list of admin users who participated in a conversation
+  """
+  def get_participating_admins(conversation_id) do
+    case get_conversation(conversation_id) do
+      {:ok, %{messages: messages}} ->
+        # Extract unique admin participants from messages
+        admins =
+          messages
+          |> Enum.map(& &1.author)
+          |> Enum.reject(&is_nil/1)
+          |> Enum.filter(&(&1.type == "admin"))
+          |> Enum.uniq_by(&"#{&1.name}-#{&1.email}")
+
+        {:ok, admins}
+
+      error ->
+        error
+    end
+  end
+
+  @doc """
+  Get admin user details from Intercom
+  """
+  def get_admin_details() do
+    case Client.get("/admins") do
+      {:ok, %Tesla.Env{status: 200, body: body}} ->
+        {:ok, body["admins"] || []}
+
+      {:ok, %Tesla.Env{status: status, body: body}} ->
+        {:error, "Intercom API returned #{status}: #{inspect(body)}"}
+
+      {:error, reason} ->
+        {:error, "Failed to fetch admins: #{inspect(reason)}"}
+    end
+  end
 end
 
 defmodule JumpTickets.External.Intercom.Client do
@@ -94,15 +131,31 @@ defmodule JumpTickets.External.Intercom.Parser do
   defp parse_part(_), do: nil
 
   # Format author details into a string (e.g., "Name (type)")
-  defp format_author(%{"name" => name, "type" => type}) do
-    "#{name} (#{type})"
+  defp format_author(%{"email" => email, "name" => name, "type" => type}) do
+    %{
+      email: email,
+      name: name,
+      type: type
+    }
   end
 
   defp format_author(%{"email" => email, "type" => type}) do
-    "#{email} (#{type})"
+    %{
+      email: email,
+      name: "",
+      type: type
+    }
   end
 
-  defp format_author(_), do: "Unknown"
+  defp format_author(%{"name" => name, "type" => type}) do
+    %{
+      email: "",
+      name: name,
+      type: type
+    }
+  end
+
+  defp format_author(_), do: nil
 
   # Clean HTML and handle special cases like image attachments
   defp clean_text(nil), do: ""

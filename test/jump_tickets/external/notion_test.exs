@@ -388,6 +388,105 @@ defmodule JumpTickets.External.Notion.ParserTest do
     end
   end
 
+  describe "parse_ticket_page" do
+    test "handles ticket page" do
+      page = %{
+        "archived" => false,
+        "cover" => nil,
+        "created_by" => %{
+          "id" => "936c8b81-c8b3-4fd7-804b-2abe165b4a65",
+          "object" => "user"
+        },
+        "created_time" => "2025-03-15T21:10:00.000Z",
+        "icon" => nil,
+        "id" => "1b7d3c1b-90d3-81c2-a83f-f57f0328a4e6",
+        "in_trash" => false,
+        "last_edited_by" => %{
+          "id" => "d8b149e2-2698-49ac-8ff7-456b53c415f0",
+          "object" => "user"
+        },
+        "last_edited_time" => "2025-03-15T21:10:00.000Z",
+        "object" => "page",
+        "parent" => %{
+          "database_id" => "1b7d3c1b-90d3-806a-8e42-ef7d903589cb",
+          "type" => "database_id"
+        },
+        "properties" => %{
+          "ID" => %{
+            "id" => "~rjk",
+            "type" => "unique_id",
+            "unique_id" => %{"number" => 7, "prefix" => "JMP"}
+          },
+          "Intercom Conversations" => %{
+            "id" => "DRly",
+            "rich_text" => [
+              %{
+                "annotations" => %{
+                  "bold" => false,
+                  "code" => false,
+                  "color" => "default",
+                  "italic" => false,
+                  "strikethrough" => false,
+                  "underline" => false
+                },
+                "href" => nil,
+                "plain_text" => "teste,teste,teste",
+                "text" => %{"content" => "teste,teste,teste", "link" => nil},
+                "type" => "text"
+              }
+            ],
+            "type" => "rich_text"
+          },
+          "Slack Channel" => %{
+            "id" => "b~en",
+            "rich_text" => [
+              %{
+                "annotations" => %{
+                  "bold" => false,
+                  "code" => false,
+                  "color" => "default",
+                  "italic" => false,
+                  "strikethrough" => false,
+                  "underline" => false
+                },
+                "href" => nil,
+                "plain_text" => "vinicius",
+                "text" => %{"content" => "vinicius", "link" => nil},
+                "type" => "text"
+              }
+            ],
+            "type" => "rich_text"
+          },
+          "Title" => %{
+            "id" => "title",
+            "title" => [
+              %{
+                "annotations" => %{
+                  "bold" => false,
+                  "code" => false,
+                  "color" => "default",
+                  "italic" => false,
+                  "strikethrough" => false,
+                  "underline" => false
+                },
+                "href" => nil,
+                "plain_text" => "API Integration Failure",
+                "text" => %{"content" => "API Integration Failure", "link" => nil},
+                "type" => "text"
+              }
+            ],
+            "type" => "title"
+          }
+        },
+        "public_url" => nil,
+        "url" => "https://www.notion.so/API-Integration-Failure-1b7d3c1b90d381c2a83ff57f0328a4e6"
+      }
+
+      ticket = Parser.parse_ticket_page(page)
+      dbg(ticket)
+    end
+  end
+
   describe "extract_title/1" do
     test "handles nil input" do
       result =

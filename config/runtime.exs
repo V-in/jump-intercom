@@ -28,6 +28,16 @@ config :jump_tickets,
        :claude_secret,
        System.get_env("CLAUDE_SECRET")
 
+config :jump_tickets,
+       :slack_secret,
+       System.get_env("SLACK_SECRET")
+
+config :jump_tickets, :slack,
+  bot_token: System.get_env("SLACK_BOT_TOKEN"),
+  client_id: System.get_env("SLACK_CLIENT_ID"),
+  client_secret: System.get_env("SLACK_CLIENT_SECRET"),
+  signing_secret: System.get_env("SLACK_SIGNING_SECRET")
+
 if config_env() == :prod do
   database_url =
     System.get_env("DATABASE_URL") ||

@@ -62,7 +62,11 @@ defmodule JumpTickets.MixProject do
       {:notionex, "~> 0.3.1"},
       {:tesla, "~> 1.4"},
       {:mock, "~> 0.3.9", only: :test},
-      {:anthropix, "~> 0.6"}
+      {:anthropix, "~> 0.6"},
+      {:slack_elixir, "~> 1.2.0"},
+      # Elixir Slack client
+      {:slack, "~> 0.23.5"},
+      {:httpoison, "~> 2.2.1", override: true}
     ]
   end
 

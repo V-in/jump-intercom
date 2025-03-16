@@ -3,6 +3,7 @@ defmodule JumpTickets.Ticket do
 
   schema "tickets" do
     field :notion_id, :string
+    field :notion_url, :string
     field :ticket_id, :string
     field :title, :string
     field :intercom_conversations, :string
