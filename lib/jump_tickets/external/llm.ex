@@ -35,6 +35,7 @@ defmodule JumpTickets.External.LLM do
     case request_analysis.(prompt) do
       {:ok, %{"decision" => "existing", "ticket_id" => ticket_id}} ->
         # Find the matching ticket from the existing tickets list
+
         matching_ticket =
           Enum.find(existing_tickets, fn ticket -> ticket.ticket_id == ticket_id end)
 
@@ -182,30 +183,26 @@ defmodule JumpTickets.External.LLM do
   def request_claude_analysis(prompt) do
     client = Anthropix.init(Application.get_env(:jump_tickets, :claude_secret))
 
-    try do
-      response =
-        Anthropix.chat(client,
-          model: "claude-3-5-haiku-20241022",
-          # max_tokens: 1000,
-          # temperature: 0.2,
-          messages: [
-            %{role: "user", content: prompt}
-          ]
-        )
+    response =
+      Anthropix.chat(client,
+        model: "claude-3-5-haiku-20241022",
+        # max_tokens: 1000,
+        # temperature: 0.2,
+        messages: [
+          %{role: "user", content: prompt}
+        ]
+      )
 
-      case response do
-        {:ok, result} ->
-          # Extract the content from Claude's response
-          content = result["content"] |> List.first() |> Map.get("text")
+    case response do
+      {:ok, result} ->
+        # Extract the content from Claude's response
+        content = result["content"] |> List.first() |> Map.get("text")
 
-          # Extract the JSON from the content
-          {:ok, parse_json_from_response(content)}
+        # Extract the JSON from the content
+        {:ok, parse_json_from_response(content)}
 
-        {:error, error} ->
-          {:error, error}
-      end
-    rescue
-      e -> {:error, "Claude API error: #{inspect(e)}"}
+      {:error, error} ->
+        {:error, error}
     end
   end
 

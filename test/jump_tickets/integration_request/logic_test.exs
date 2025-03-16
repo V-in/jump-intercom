@@ -1,10 +1,10 @@
-defmodule JumpTickets.IntegrationRequestTest do
+defmodule JumpTickets.Logic.LogicTest do
   use ExUnit.Case, async: true
 
   alias JumpTickets.Ticket
-  alias JumpTickets.IntegrationRequest
-  alias JumpTickets.Integration.Request
-  alias JumpTickets.Integration.Step
+  alias JumpTickets.IntegrationRequest.Logic
+  alias JumpTickets.IntegrationRequest.Request
+  alias JumpTickets.IntegrationRequest.Step
 
   import Mock
 
@@ -20,7 +20,7 @@ defmodule JumpTickets.IntegrationRequestTest do
       conversation_id: conversation_id
     } do
       request =
-        IntegrationRequest.new(%{
+        Logic.new(%{
           conversation_id: conversation_id,
           message_body: "What is happening?"
         })
@@ -58,7 +58,7 @@ defmodule JumpTickets.IntegrationRequestTest do
   describe "run/1" do
     test "runs all steps in sequence when all succeed", %{conversation_id: conversation_id} do
       request =
-        IntegrationRequest.new(%{
+        Logic.new(%{
           conversation_id: "2",
           conversation_url: "https://test.com",
           message_body: "What is happening?"
@@ -66,7 +66,7 @@ defmodule JumpTickets.IntegrationRequestTest do
 
       # Run the request
 
-      result = IntegrationRequest.run(request)
+      result = Logic.run(request)
       dbg(result)
 
       # with_mock(JumpTickets.External.LLM,
@@ -174,7 +174,7 @@ defmodule JumpTickets.IntegrationRequestTest do
         context: %{}
       }
 
-      result = IntegrationRequest.run(request)
+      result = Logic.run(request)
       dbg(result)
     end
 
@@ -255,19 +255,19 @@ defmodule JumpTickets.IntegrationRequestTest do
         context: %{}
       }
 
-      result = IntegrationRequest.run(request)
+      result = Logic.run(request)
       dbg(result)
     end
 
     test "stops processing when a step fails", %{conversation_id: conversation_id} do
-      request = IntegrationRequest.new(conversation_id)
+      request = Logic.new(conversation_id)
 
       # Make the first step succeed but second step fail
-      MockNotionIntegration.set_response({:ok, %{tickets: []}})
-      MockAIIntegration.set_response({:error, "AI analysis failed"})
+      MockNotionIntegrationRequest.set_response({:ok, %{tickets: []}})
+      MockAIIntegrationRequest.set_response({:error, "AI analysis failed"})
 
       # Run the request
-      result = IntegrationRequest.run(request)
+      result = Logic.run(request)
 
       # Check overall request status
       assert result.status == :failed
@@ -301,20 +301,20 @@ defmodule JumpTickets.IntegrationRequestTest do
   describe "retry_step/2" do
     test "resets and retries from a specific step", %{conversation_id: conversation_id} do
       # Create a request with some completed and failed steps
-      request = IntegrationRequest.new(conversation_id)
+      request = Logic.new(conversation_id)
 
       # First run with a failure in ai_analysis
-      MockNotionIntegration.set_response({:ok, %{tickets: []}})
-      MockAIIntegration.set_response({:error, "AI analysis failed"})
+      MockNotionIntegrationRequest.set_response({:ok, %{tickets: []}})
+      MockAIIntegrationRequest.set_response({:error, "AI analysis failed"})
 
-      failed_request = IntegrationRequest.run(request)
+      failed_request = Logic.run(request)
       assert failed_request.status == :failed
       assert failed_request.steps[:ai_analysis].status == :failed
 
       # Now fix the AI step and retry from there
-      MockAIIntegration.set_response({:ok, %{summary: "Fixed AI analysis"}})
+      MockAIIntegrationRequest.set_response({:ok, %{summary: "Fixed AI analysis"}})
 
-      retried_request = IntegrationRequest.retry_step(failed_request, :ai_analysis)
+      retried_request = Logic.retry_step(failed_request, :ai_analysis)
 
       # Check if the retry worked
       assert retried_request.status == :completed
@@ -331,20 +331,20 @@ defmodule JumpTickets.IntegrationRequestTest do
   describe "retry_all/1" do
     test "resets and retries the entire request", %{conversation_id: conversation_id} do
       # Create a request with some completed and failed steps
-      request = IntegrationRequest.new(conversation_id)
+      request = Logic.new(conversation_id)
 
       # First run with a failure
-      MockNotionIntegration.set_response({:ok, %{tickets: []}})
-      MockAIIntegration.set_response({:error, "AI analysis failed"})
+      MockNotionIntegrationRequest.set_response({:ok, %{tickets: []}})
+      MockAIIntegrationRequest.set_response({:error, "AI analysis failed"})
 
-      failed_request = IntegrationRequest.run(request)
+      failed_request = Logic.run(request)
       assert failed_request.status == :failed
 
       # Now fix all steps and retry everything
-      MockNotionIntegration.set_response({:ok, %{tickets: ["new_ticket"]}})
-      MockAIIntegration.set_response({:ok, %{summary: "New AI analysis"}})
+      MockNotionIntegrationRequest.set_response({:ok, %{tickets: ["new_ticket"]}})
+      MockAIIntegrationRequest.set_response({:ok, %{summary: "New AI analysis"}})
 
-      retried_request = IntegrationRequest.retry_all(failed_request)
+      retried_request = Logic.retry_all(failed_request)
 
       # Check if the retry worked
       assert retried_request.status == :completed

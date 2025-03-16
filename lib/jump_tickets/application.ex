@@ -17,7 +17,8 @@ defmodule JumpTickets.Application do
       # Start a worker by calling: JumpTickets.Worker.start_link(arg)
       # {JumpTickets.Worker, arg},
       # Start to serve requests, typically the last entry
-      JumpTicketsWeb.Endpoint
+      JumpTicketsWeb.Endpoint,
+      JumpTickets.IntegrationRequest.Coordinator
     ]
 
     # See https://hexdocs.pm/elixir/Supervisor.html

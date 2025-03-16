@@ -18,7 +18,7 @@
           <div>
             <p class="text-sm text-gray-400">Completed</p>
 
-            <p class="text-xl font-semibold">24</p>
+            <p class="text-xl font-semibold">{@completed_count}</p>
           </div>
         </div>
       </div>
@@ -32,7 +32,7 @@
           <div>
             <p class="text-sm text-gray-400">In Progress</p>
 
-            <p class="text-xl font-semibold">7</p>
+            <p class="text-xl font-semibold">{@running_count}</p>
           </div>
         </div>
       </div>
@@ -46,12 +46,12 @@
           <div>
             <p class="text-sm text-gray-400">Failed</p>
 
-            <p class="text-xl font-semibold">3</p>
+            <p class="text-xl font-semibold">{@failed_count}</p>
           </div>
         </div>
       </div>
 
-      <%!-- <div class="rounded-lg bg-gray-800 p-4">
+      <div class="rounded-lg bg-gray-800 p-4">
         <div class="flex items-center">
           <div class="mr-4 rounded-full bg-yellow-900 p-3 px-4">
             <i class="fas fa-clock text-yellow-400"></i>
@@ -60,10 +60,10 @@
           <div>
             <p class="text-sm text-gray-400">Queued</p>
 
-            <p class="text-xl font-semibold">12</p>
+            <p class="text-xl font-semibold">{@pending_count}</p>
           </div>
         </div>
-      </div> --%>
+      </div>
     </div>
   </header>
   
@@ -73,425 +73,68 @@
     <div class="grid grid-cols-1 gap-6">
       <!-- Completed Integration Card -->
 
-      <div class="overflow-hidden rounded-lg bg-gray-800 shadow-lg">
-        <div class="border-l-4 border-green-500 px-6 py-4">
-          <div class="flex items-center justify-between">
-            <div>
-              <h3 class="text-lg font-semibold text-white">
-                #INT-285 - Customer exchange won't sync
-              </h3>
+      <.integration_request
+        :for={integration_request <- @integration_requests}
+        integration_request={integration_request}
+      />
+    </div>
 
-              <div class="mt-1 flex items-center text-sm text-gray-400">
-                <span class="mr-4"><i class="far fa-clock mr-1"></i> Created 2h ago</span>
-
-                <span class="mr-4">
-                  <i class="far fa-user mr-1"></i> john.doe@company.com
-                </span>
-
-                <span class="rounded-md bg-green-900 px-2 py-0.5 text-green-300">
-                  Completed
-                </span>
-              </div>
-            </div>
-
-            <div class="flex space-x-2">
-              <button class="p-1 text-gray-400 hover:text-white">
-                <i class="fas fa-expand"></i>
-              </button>
-
-              <button class="p-1 text-gray-400 hover:text-white">
-                <i class="fas fa-ellipsis-v"></i>
-              </button>
-            </div>
-          </div>
-        </div>
-        
-<!-- Integration Steps -->
-
-        <div class="border-t border-gray-700 px-6 py-3">
-          <div class="mb-2 flex items-center">
-            <h4 class="font-medium text-white">Integration Steps</h4>
-
-            <span class="ml-2 rounded-full bg-gray-700 px-2 py-0.5 text-xs">
-              Completed in 1m 24s
-            </span>
-          </div>
-
-          <div class="mt-4 flex flex-col space-y-4">
-            <!-- Step 1 -->
-
-            <div class="flex items-center">
-              <div class="relative">
-                <div class="flex h-8 w-8 items-center justify-center rounded-full bg-green-900">
-                  <i class="fas fa-check text-green-400"></i>
-                </div>
-
-                <div class="absolute top-8 left-4 h-full w-0.5 -translate-x-1/2 bg-gray-700">
-                </div>
-              </div>
-
-              <div class="ml-4 flex-1">
-                <div class="flex items-start justify-between">
-                  <div>
-                    <h5 class="font-medium text-white">Check Existing Tickets</h5>
-
-                    <p class="text-sm text-gray-400">
-                      Retrieved 156 tickets from Notion database
-                    </p>
-                  </div>
-
-                  <span class="text-xs text-gray-500">10s</span>
-                </div>
-              </div>
-            </div>
-            
-<!-- Step 2 -->
-
-            <div class="flex items-center">
-              <div class="relative">
-                <div class="flex h-8 w-8 items-center justify-center rounded-full bg-green-900">
-                  <i class="fas fa-check text-green-400"></i>
-                </div>
-
-                <div class="absolute top-8 left-4 h-full w-0.5 -translate-x-1/2 bg-gray-700">
-                </div>
-              </div>
-
-              <div class="ml-4 flex-1">
-                <div class="flex items-start justify-between">
-                  <div>
-                    <h5 class="font-medium text-white">AI Analysis</h5>
-
-                    <p class="text-sm text-gray-400">
-                      Created new ticket based on conversation content
-                    </p>
-                  </div>
-
-                  <span class="text-xs text-gray-500">23s</span>
-                </div>
-              </div>
-            </div>
-            
-<!-- Step 3 -->
-
-            <div class="flex items-center">
-              <div class="relative">
-                <div class="flex h-8 w-8 items-center justify-center rounded-full bg-green-900">
-                  <i class="fas fa-check text-green-400"></i>
-                </div>
-
-                <div class="absolute top-8 left-4 h-full w-0.5 -translate-x-1/2 bg-gray-700">
-                </div>
-              </div>
-
-              <div class="ml-4 flex-1">
-                <div class="flex items-start justify-between">
-                  <div>
-                    <h5 class="font-medium text-white">Create Notion Ticket</h5>
-
-                    <p class="text-sm text-gray-400">
-                      Created ticket JMP-285 with AI-generated title
-                    </p>
-                  </div>
-
-                  <span class="text-xs text-gray-500">14s</span>
-                </div>
-              </div>
-            </div>
-            
-<!-- Step 4 -->
-
-            <div class="flex items-center">
-              <div class="relative">
-                <div class="flex h-8 w-8 items-center justify-center rounded-full bg-green-900">
-                  <i class="fas fa-check text-green-400"></i>
-                </div>
-              </div>
-
-              <div class="ml-4 flex-1">
-                <div class="flex items-start justify-between">
-                  <div>
-                    <h5 class="font-medium text-white">Create Slack Channel</h5>
-
-                    <p class="text-sm text-gray-400">
-                      #JMP-285-customer-exchange-wont-sync created with 3 users
-                    </p>
-                  </div>
-
-                  <span class="text-xs text-gray-500">37s</span>
-                </div>
-
-                <div class="mt-1">
-                  <a href="#" class="text-sm text-indigo-400 hover:text-indigo-300">
-                    View in Slack <i class="fas fa-external-link-alt ml-1 text-xs"></i>
-                  </a>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+    <div class="flex min-h-[60vh] flex-col items-center justify-center bg-black px-4">
       
-<!-- Failed Integration Card -->
+<!-- Text content -->
 
-          <!-- Failed Integration Card (Expanded with Error Details) -->
+      <div :if={@integration_requests == []} class="max-w-2xl text-center">
+        <h2 class="mb-3 text-2xl font-bold text-white">No integration requests yet</h2>
 
-      <div class="overflow-hidden rounded-lg bg-gray-800 shadow-lg">
-        <div class="border-l-4 border-red-500 px-6 py-4">
-          <div class="flex items-center justify-between">
-            <div>
-              <h3 class="text-lg font-semibold text-white">
-                #INT-285 - Customer exchange won't sync
-              </h3>
+        <p class="mb-6 text-gray-400">
+          To create your first integration request, go to your Intercom inbox and use the "Create Notion Ticket" action on any message.
+        </p>
 
-              <div class="mt-1 flex items-center text-sm text-gray-400">
-                <span class="mr-4"><i class="far fa-clock mr-1"></i> Created 2h ago</span>
+        <div class="rounded-lg bg-gray-800 p-6 text-left">
+          <h3 class="mb-4 text-lg font-semibold text-white">
+            How to create an integration request:
+          </h3>
 
-                <span class="mr-4">
-                  <i class="far fa-user mr-1"></i> john.doe@company.com
-                </span>
-
-                <span class="rounded-md bg-red-900 px-2 py-0.5 text-red-300">Failed</span>
-              </div>
-            </div>
-
-            <div class="flex space-x-2">
-              <button class="p-1 text-gray-400 hover:text-white">
-                <i class="fas fa-expand"></i>
-              </button>
-
-              <button class="p-1 text-gray-400 hover:text-white">
-                <i class="fas fa-ellipsis-v"></i>
-              </button>
-            </div>
-          </div>
-        </div>
-        
-<!-- Integration Steps -->
-
-        <div class="border-t border-gray-700 px-6 py-3">
-          <div class="mb-2 flex items-center">
-            <h4 class="font-medium text-white">Integration Steps</h4>
-
-            <span class="ml-2 rounded-full bg-gray-700 px-2 py-0.5 text-xs">
-              Failed after 47s
-            </span>
-          </div>
-
-          <div class="mt-4 flex flex-col space-y-4">
-            <!-- Steps 1 and 2 remain the same -->
-
-                <!-- Failed Step (Step 3) -->
-
-            <div class="flex items-center">
-              <div class="relative">
-                <div class="flex h-8 w-8 items-center justify-center rounded-full bg-red-900">
-                  <i class="fas fa-times text-red-400"></i>
-                </div>
-
-                <div class="absolute top-8 left-4 h-full w-0.5 -translate-x-1/2 bg-gray-700">
-                </div>
+          <ol class="space-y-4">
+            <li class="flex items-start">
+              <div class="mt-0.5 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-indigo-900 text-indigo-400">
+                1
               </div>
 
-              <div class="ml-4 flex-1">
-                <div class="flex items-start justify-between">
-                  <div>
-                    <h5 class="font-medium text-white">Create Slack Channel</h5>
-
-                    <p class="text-sm text-red-400">Failed to create Slack channel</p>
-                  </div>
-
-                  <div class="flex items-center">
-                    <span class="mr-2 text-xs text-gray-500">15s</span>
-
-                    <button class="rounded-md bg-gray-700 px-3 py-1 text-sm hover:bg-gray-600">
-                      Retry Step
-                    </button>
-                  </div>
-                </div>
-                
-<!-- Error Details -->
-
-                <div class="custom-scrollbar mt-2 max-h-40 overflow-y-auto rounded-lg bg-gray-900 p-3">
-                  <pre class="font-mono text-sm text-red-400">
-{"Error: Unable to create Slack channel
-
-Reason: Insufficient permissions
-
-Stack trace:
-
-at SlackIntegration.createChannel (/app/lib/slack.ex:45)
-
-at Integration.execute_step (/app/lib/integration.ex:89)
-
-at Integration.run_step (/app/lib/integration.ex:67)"}</pre>
-                </div>
+              <div class="ml-3">
+                <p class="text-gray-300">Open your Intercom inbox and select a conversation</p>
               </div>
-            </div>
-            
-<!-- Pending Step (Step 4) -->
+            </li>
 
-            <div class="flex items-center opacity-50">
-              <div class="relative">
-                <div class="flex h-8 w-8 items-center justify-center rounded-full bg-gray-700">
-                  <i class="fas fa-clock text-gray-400"></i>
-                </div>
+            <li class="flex items-start">
+              <div class="mt-0.5 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-indigo-900 text-indigo-400">
+                2
               </div>
 
-              <div class="ml-4 flex-1">
-                <div class="flex items-start justify-between">
-                  <div>
-                    <h5 class="font-medium text-white">Update Notion with Slack Details</h5>
-
-                    <p class="text-sm text-gray-400">Waiting for Slack channel creation</p>
-                  </div>
-                </div>
+              <div class="ml-3">
+                <p class="text-gray-300">
+                  Click the three dots menu <i class="fas fa-ellipsis-h mx-1 text-gray-500"></i>
+                  on any message
+                </p>
               </div>
-            </div>
-          </div>
-        </div>
-      </div>
-      
-<!-- In-Progress Integration Card -->
+            </li>
 
-      <div class="overflow-hidden rounded-lg bg-gray-800 shadow-lg">
-        <div class="border-l-4 border-blue-500 px-6 py-4">
-          <div class="flex items-center justify-between">
-            <div>
-              <h3 class="text-lg font-semibold text-white">
-                #INT-287 - Integration setup required
-              </h3>
-
-              <div class="mt-1 flex items-center text-sm text-gray-400">
-                <span class="mr-4"><i class="far fa-clock mr-1"></i> Started 2m ago</span>
-
-                <span class="mr-4">
-                  <i class="far fa-user mr-1"></i> mike.jones@company.com
-                </span>
-
-                <span class="rounded-md bg-blue-900 px-2 py-0.5 text-blue-300">
-                  In Progress
-                </span>
-              </div>
-            </div>
-
-            <div class="flex space-x-2">
-              <button class="p-1 text-gray-400 hover:text-white">
-                <i class="fas fa-expand"></i>
-              </button>
-
-              <button class="p-1 text-gray-400 hover:text-white">
-                <i class="fas fa-ellipsis-v"></i>
-              </button>
-            </div>
-          </div>
-        </div>
-        
-<!-- Integration Steps -->
-
-        <div class="border-t border-gray-700 px-6 py-3">
-          <div class="mb-2 flex items-center">
-            <h4 class="font-medium text-white">Integration Steps</h4>
-
-            <span class="ml-2 rounded-full bg-gray-700 px-2 py-0.5 text-xs">
-              Running for 2m 15s
-            </span>
-          </div>
-
-          <div class="mt-4 flex flex-col space-y-4">
-            <!-- Completed Steps -->
-
-            <div class="flex items-center">
-              <div class="relative">
-                <div class="flex h-8 w-8 items-center justify-center rounded-full bg-green-900">
-                  <i class="fas fa-check text-green-400"></i>
-                </div>
-
-                <div class="absolute top-8 left-4 h-full w-0.5 -translate-x-1/2 bg-gray-700">
-                </div>
+            <li class="flex items-start">
+              <div class="mt-0.5 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-indigo-900 text-indigo-400">
+                3
               </div>
 
-              <div class="ml-4 flex-1">
-                <div class="flex items-start justify-between">
-                  <div>
-                    <h5 class="font-medium text-white">Check Existing Tickets</h5>
+              <div class="ml-3">
+                <p class="text-gray-300">
+                  Select <span class="text-indigo-400">"Create Notion Ticket"</span> from the menu
+                </p>
 
-                    <p class="text-sm text-gray-400">
-                      Retrieved 157 tickets from Notion database
-                    </p>
-                  </div>
-
-                  <span class="text-xs text-gray-500">11s</span>
-                </div>
+                <p class="mt-1 text-sm text-gray-500">
+                  This will create a new integration request that you can track here
+                </p>
               </div>
-            </div>
-            
-<!-- In-Progress Step -->
-
-            <div class="flex items-center">
-              <div class="relative">
-                <div class="flex h-8 w-8 items-center justify-center rounded-full bg-blue-900">
-                  <i class="fas fa-spinner fa-spin text-blue-400"></i>
-                </div>
-
-                <div class="absolute top-8 left-4 h-full w-0.5 -translate-x-1/2 bg-gray-700">
-                </div>
-              </div>
-
-              <div class="ml-4 flex-1">
-                <div class="flex items-start justify-between">
-                  <div>
-                    <h5 class="font-medium text-white">AI Analysis</h5>
-
-                    <p class="text-sm text-gray-400">Analyzing conversation content...</p>
-                  </div>
-
-                  <div class="flex items-center">
-                    <span class="text-xs text-gray-500">Running</span>
-                  </div>
-                </div>
-                
-<!-- Progress Indicator -->
-
-                <div class="mt-2 h-1 rounded-full bg-gray-900">
-                  <div class="h-1 w-3/4 animate-pulse rounded-full bg-blue-500"></div>
-                </div>
-              </div>
-            </div>
-            
-<!-- Pending Steps -->
-
-            <div class="flex items-center opacity-50">
-              <div class="relative">
-                <div class="flex h-8 w-8 items-center justify-center rounded-full bg-gray-700">
-                  <i class="fas fa-clock text-gray-400"></i>
-                </div>
-
-                <div class="absolute top-8 left-4 h-full w-0.5 -translate-x-1/2 bg-gray-700">
-                </div>
-              </div>
-
-              <div class="ml-4 flex-1">
-                <h5 class="font-medium text-white">Create Notion Ticket</h5>
-
-                <p class="text-sm text-gray-400">Waiting to start...</p>
-              </div>
-            </div>
-
-            <div class="flex items-center opacity-50">
-              <div class="relative">
-                <div class="flex h-8 w-8 items-center justify-center rounded-full bg-gray-700">
-                  <i class="fas fa-clock text-gray-400"></i>
-                </div>
-              </div>
-
-              <div class="ml-4 flex-1">
-                <h5 class="font-medium text-white">Create Slack Channel</h5>
-
-                <p class="text-sm text-gray-400">Waiting to start...</p>
-              </div>
-            </div>
-          </div>
+            </li>
+          </ol>
         </div>
       </div>
     </div>
