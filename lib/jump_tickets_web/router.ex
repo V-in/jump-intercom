@@ -18,6 +18,7 @@ defmodule JumpTicketsWeb.Router do
     pipe_through :browser
 
     get "/", PageController, :home
+    live "/integration_requests", IntegrationRequestsLive
   end
 
   # Other scopes may use custom stacks.
