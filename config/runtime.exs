@@ -32,11 +32,14 @@ config :jump_tickets,
        :slack_secret,
        System.get_env("SLACK_SECRET")
 
-config :jump_tickets, :slack,
-  bot_token: System.get_env("SLACK_BOT_TOKEN"),
-  client_id: System.get_env("SLACK_CLIENT_ID"),
-  client_secret: System.get_env("SLACK_CLIENT_SECRET"),
-  signing_secret: System.get_env("SLACK_SIGNING_SECRET")
+config :jump_tickets,
+       :notion_db_id,
+       System.get_env("NOTION_DB_ID")
+
+config :notionex,
+  bearer_token: System.get_env("NOTION_SECRET")
+
+config :jump_tickets, :slack, bot_token: System.get_env("SLACK_BOT_TOKEN")
 
 if config_env() == :prod do
   database_url =

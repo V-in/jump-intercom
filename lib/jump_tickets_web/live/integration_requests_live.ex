@@ -126,7 +126,11 @@ defmodule JumpTicketsWeb.IntegrationRequestsLive do
   defp card_title(
          %{
            integration_request: %{
-             steps: %{ai_analysis: %{result: {_, %Ticket{ticket_id: ticket_id, title: title}}}}
+             steps: %{
+               create_or_update_notion_ticket: %{
+                 result: %Ticket{ticket_id: ticket_id, title: title}
+               }
+             }
            }
          } = assigns
        ) do
@@ -142,12 +146,18 @@ defmodule JumpTicketsWeb.IntegrationRequestsLive do
     """
   end
 
-  defp card_title(assigns),
-    do: ~H"""
-    <h3 class="text-lg font-semibold text-gray-400 animate-pulse">
-      Ticket title pending AI analysis...
+  defp card_title(assigns) do
+    ~H"""
+    <h3 class={[
+      "text-lg font-semibold text-gray-400",
+      if @integration_request.status == :running do
+        "animate-pulse"
+      end
+    ]}>
+      Ticket not created/found yet...
     </h3>
     """
+  end
 
   defp status_pill(%{status: :completed} = assigns),
     do: ~H"""
@@ -268,13 +278,13 @@ defmodule JumpTicketsWeb.IntegrationRequestsLive do
 
   defp get_step_title(:check_existing_tickets), do: "Check Existing Tickets"
   defp get_step_title(:ai_analysis), do: "AI Analysis"
-  defp get_step_title(:create_or_update_notion_ticket), do: "Create Notion Ticket"
+  defp get_step_title(:create_or_update_notion_ticket), do: "Create/Update Notion Ticket"
   defp get_step_title(:maybe_create_slack_channel), do: "Create Slack Channel"
   defp get_step_title(:maybe_update_notion_with_slack), do: "Update Ticket With Channel"
   defp get_step_title(:add_intercom_users_to_slack), do: "Invite Slack Users"
 
   defp get_step_subtitle(:check_existing_tickets, %{status: :completed, result: tickets} = step),
-    do: "Retried #{Enum.count(tickets)} ticket(s) from Notion Database"
+    do: "Retrieved #{Enum.count(tickets)} ticket(s) from Notion Database"
 
   defp get_step_subtitle(:check_existing_tickets, %{status: :failed} = step),
     do: "Failed To Retrieve Tickets"

@@ -15,9 +15,6 @@ config :jump_tickets,
   ecto_repos: [JumpTickets.Repo],
   generators: [timestamp_type: :utc_datetime]
 
-config :notionex,
-  bearer_token: "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"
-
 # Configures the endpoint
 config :jump_tickets, JumpTicketsWeb.Endpoint,
   url: [host: "localhost"],

@@ -3,9 +3,9 @@ defmodule JumpTickets.IntegrationRequest do
 
   def create_integration_request(
         %{
-          conversation_id: conversation_id,
-          conversation_url: conversation_url,
-          message_body: message_body
+          conversation_id: _,
+          conversation_url: _,
+          message_body: _
         } = params
       ) do
     Coordinator.create_request(params)

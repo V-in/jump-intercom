@@ -1,12 +1,10 @@
 defmodule JumpTickets.External.Notion do
-  alias ElixirLS.LanguageServer.Parser
   alias JumpTickets.Ticket
   alias Notionex
-  alias Notionex.API
 
-  @db_id "1b7d3c1b90d3806a8e42ef7d903589cb"
+  def query_db() do
+    db_id = Application.get_env(:jump_tickets, :notion_db_id)
 
-  def query_db(db_id \\ @db_id) do
     result =
       Notionex.API.query_database(%{database_id: db_id, page_size: 20})
       |> __MODULE__.Parser.parse_response()
@@ -14,7 +12,9 @@ defmodule JumpTickets.External.Notion do
     {:ok, result}
   end
 
-  def create_ticket(%Ticket{} = ticket, db_id \\ @db_id) do
+  def create_ticket(%Ticket{} = ticket) do
+    db_id = Application.get_env(:jump_tickets, :notion_db_id)
+
     properties = %{
       "Title" => %{
         title: [%{text: %{content: ticket.title}}]
