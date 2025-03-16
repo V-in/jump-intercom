@@ -14,8 +14,12 @@ defmodule JumpTicketsWeb.Router do
     plug :accepts, ["json"]
   end
 
+  pipeline :basic_auth do
+    plug :auth
+  end
+
   scope "/", JumpTicketsWeb do
-    pipe_through :browser
+    pipe_through [:browser, :basic_auth]
 
     get "/", PageController, :home
     live "/integration_requests", IntegrationRequestsLive
@@ -44,5 +48,11 @@ defmodule JumpTicketsWeb.Router do
       live_dashboard "/dashboard", metrics: JumpTicketsWeb.Telemetry
       forward "/mailbox", Plug.Swoosh.MailboxPreview
     end
+  end
+
+  defp auth(conn, _opts) do
+    username = System.fetch_env!("AUTH_USERNAME")
+    password = System.fetch_env!("AUTH_PASSWORD")
+    Plug.BasicAuth.basic_auth(conn, username: username, password: password)
   end
 end
