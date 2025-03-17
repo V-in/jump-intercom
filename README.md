@@ -113,14 +113,57 @@ Sample request
 }
 ```
 
-To start your Phoenix server:
+## Setup Intercom
 
-- Run `mix setup` to install and setup dependencies
-- Start Phoenix endpoint with `mix phx.server` or inside IEx with `iex -S mix phx.server`
+- Setup `INTERCOM_SECRET` by creating Intercom App from developer hub and grabbing the secret key, don't forget to add the app to the workspace
+- From the intercom inbox ui go to Settings > Integrations > Actions > Create new Action
+- In usage select Workflows and Help Desk
+- In API Connection set it do a post request to the deployed app at /api/submit and include the headers and request body from the screenshot.
+- With these settings you can click "save and set live"
+  ![Create action - 1](docs/create-action-1.png)
+  ![Create action - 2](docs/create-action-2.png)
 
-Now you can visit [`localhost:4000`](http://localhost:4000) from your browser.
+## Setup Anthropic
 
-Ready to run in production? Please [check our deployment guides](https://hexdocs.pm/phoenix/deployment.html).
+- Right now the project uses Claude-3.5-haiku for deciding between existing tickets, set the API key `CLAUDE_SECRET`
+
+## Setup notion
+
+- Create a new integration
+- Grab the secret key and set `NOTION_SECRET`
+- Add the integration to the db file
+- Grab db id and set `NOTION_DB_ID`
+
+## Setup Slack
+
+- Create slack app and navigate to OAuth and Permissions
+- Set the following oauth scopes and generate token
+
+  ```
+  channels:manage
+  channels:read
+  channels:write.invites
+  chat:write
+  users:read
+  users:read.email
+  ```
+
+- Set `SLACK_BOT_TOKEN` with the value from the previous step
+  ![alt text](docs/slack-bot.png)
+
+## Deploy
+
+- Copy .env.template to .env
+- Set `PHX_HOST` to the url the base app is hosted on
+- Set `SECRET_KEY_BASE` to the result of `mix phx.gen.secret`
+- Set `MIX_ENV` to "prod"
+  ```
+    $ source .env
+    $ mix deps.get
+    $ mix assets.deploy
+    $ mix release
+    $  _build/prod/rel/jump_tickets/bin/jump_tickets start
+  ```
 
 ## Learn more
 
