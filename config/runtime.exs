@@ -36,6 +36,8 @@ config :jump_tickets,
        :notion_db_id,
        System.get_env("NOTION_DB_ID")
 
+config :jump_tickets, :intercom, admin_id: System.get_env("INTERCOM_ADMIN_ID")
+
 config :notionex,
   bearer_token: System.get_env("NOTION_SECRET")
 

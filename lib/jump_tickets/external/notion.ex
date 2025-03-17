@@ -33,6 +33,16 @@ defmodule JumpTickets.External.Notion do
     end
   end
 
+  def get_ticket_by_page_id(page_id) do
+    case Notionex.API.retrieve_page(%{page_id: page_id}) do
+      %Notionex.Object.Page{} = page ->
+        __MODULE__.Parser.parse_ticket_page(page)
+
+      _ ->
+        {:error, "Failed to get page #{page_id}"}
+    end
+  end
+
   def create_ticket(%Ticket{} = ticket) do
     db_id = Application.get_env(:jump_tickets, :notion_db_id)
 

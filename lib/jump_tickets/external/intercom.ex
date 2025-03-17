@@ -40,6 +40,29 @@ defmodule JumpTickets.External.Intercom do
   end
 
   @doc """
+  Replies to a conversation with a message
+  """
+  def reply_to_conversation(conversation_id, message) do
+    body = %{
+      message_type: "comment",
+      type: "admin",
+      admin_id: Application.get_env(:jump_tickets, :intercom)[:admin_id],
+      body: message
+    }
+
+    case Client.post("/conversations/#{conversation_id}/reply", body) do
+      {:ok, %Tesla.Env{status: 200}} ->
+        {:ok, "Message sent"}
+
+      {:ok, %Tesla.Env{status: status, body: body}} ->
+        {:error, "Intercom API returned #{status}: #{inspect(body)}"}
+
+      {:error, reason} ->
+        {:error, "Failed to send message: #{inspect(reason)}"}
+    end
+  end
+
+  @doc """
   Get admin user details from Intercom
   """
   def get_admin_details() do

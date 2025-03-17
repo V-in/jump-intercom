@@ -120,6 +120,7 @@ Sample request
 - In usage select Workflows and Help Desk
 - In API Connection set it do a post request to the deployed app at /api/submit and include the headers and request body from the screenshot.
 - With these settings you can click "save and set live"
+- In order for the done notifier to work, you also need to set `INTERCOM_ADMIN_ID`. Feel free to use the helper `JumpTickets.External.Intercom.get_admin_details` to list all the available admins ( either remote attach or simple `iex run -S mix phx.server`)
   ![Create action - 1](docs/create-action-1.png)
   ![Create action - 2](docs/create-action-2.png)
 

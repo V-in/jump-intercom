@@ -25,6 +25,12 @@ defmodule JumpTicketsWeb.Router do
     live "/integration_requests", IntegrationRequestsLive
   end
 
+  scope "/webhooks", JumpTicketsWeb do
+    pipe_through :api
+
+    post "/notion/ticket_done", TicketDoneController, :notion_webhook
+  end
+
   # Other scopes may use custom stacks.
   scope "/api", JumpTicketsWeb do
     pipe_through :api
