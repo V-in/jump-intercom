@@ -63,7 +63,12 @@ defmodule JumpTickets.IntegrationRequest.Logic do
   Runs an integration request through all its steps.
   """
   @spec run(Request.t()) :: Request.t()
-  def run(%Request{} = request) do
+  def run(%Request{} = request, opts \\ []) do
+    intercom = Keyword.get(opts, :intercom, JumpTickets.External.Intercom)
+    notion = Keyword.get(opts, :notion, JumpTickets.External.Notion)
+    slack = Keyword.get(opts, :slack, JumpTickets.External.Slack)
+    llm = Keyword.get(opts, :llm, JumpTickets.External.LLM)
+
     # Start with the first step and run through them sequentially
     request = mark_as_running(request)
 
@@ -72,7 +77,7 @@ defmodule JumpTickets.IntegrationRequest.Logic do
     final_request =
       @step_types
       |> Enum.reduce_while(request, fn step_type, acc ->
-        case run_step(acc, step_type) do
+        case run_step(acc, step_type, intercom: intercom, notion: notion, slack: slack, llm: llm) do
           {:ok, updated_request} -> {:cont, updated_request}
           {:error, updated_request} -> {:halt, updated_request}
         end
@@ -85,7 +90,7 @@ defmodule JumpTickets.IntegrationRequest.Logic do
 
   # Private functions
 
-  defp run_step(request, step_type) do
+  defp run_step(request, step_type, opts) do
     step = get_in(request.steps, [step_type])
     # Skip if any previous step has failed
     cond do
@@ -107,7 +112,7 @@ defmodule JumpTickets.IntegrationRequest.Logic do
 
         # Run the actual integration
         try do
-          case execute_step(step_type, request) do
+          case execute_step(step_type, request, opts) do
             {:ok, result} ->
               request =
                 update_step(request, step_type, %{
@@ -150,45 +155,57 @@ defmodule JumpTickets.IntegrationRequest.Logic do
     end
   end
 
-  defp execute_step(:check_existing_tickets, request) do
-    JumpTickets.External.Notion.query_db()
+  defp execute_step(:check_existing_tickets, request, opts) do
+    opts[:notion].query_db()
   end
 
-  defp execute_step(:ai_analysis, %{
-         intercom_conversation_id: conversation_id,
-         message_body: message_body,
-         steps: %{
-           check_existing_tickets: %{result: tickets}
-         }
-       }) do
-    with {:ok, conversation} <- JumpTickets.External.Intercom.get_conversation(conversation_id),
+  defp execute_step(
+         :ai_analysis,
+         %{
+           intercom_conversation_id: conversation_id,
+           message_body: message_body,
+           steps: %{
+             check_existing_tickets: %{result: tickets}
+           }
+         },
+         opts
+       ) do
+    with {:ok, conversation} <- opts[:intercom].get_conversation(conversation_id),
          {:ok, decision} <-
-           JumpTickets.External.LLM.find_or_create_ticket(tickets, message_body, conversation) do
+           opts[:llm].find_or_create_ticket(tickets, message_body, conversation) do
       {:ok, decision}
     else
       {:error, reason} -> {:error, reason}
     end
   end
 
-  defp execute_step(:create_or_update_notion_ticket, %{
-         intercom_conversation_url: conversation_url,
-         steps: %{ai_analysis: %{result: {:new, ticket_params}}}
-       }) do
+  defp execute_step(
+         :create_or_update_notion_ticket,
+         %{
+           intercom_conversation_url: conversation_url,
+           steps: %{ai_analysis: %{result: {:new, ticket_params}}}
+         },
+         opts
+       ) do
     ticket = %Ticket{
       title: ticket_params.title,
       summary: ticket_params.summary,
       intercom_conversations: conversation_url
     }
 
-    result = JumpTickets.External.Notion.create_ticket(ticket)
+    result = opts[:notion].create_ticket(ticket)
 
     result
   end
 
-  defp execute_step(:create_or_update_notion_ticket, %{
-         intercom_conversation_url: conversation_url,
-         steps: %{ai_analysis: %{result: {:existing, existing_ticket}}}
-       }) do
+  defp execute_step(
+         :create_or_update_notion_ticket,
+         %{
+           intercom_conversation_url: conversation_url,
+           steps: %{ai_analysis: %{result: {:existing, existing_ticket}}}
+         },
+         opts
+       ) do
     existing_conversations =
       if is_nil(existing_ticket.intercom_conversations) do
         ""
@@ -202,7 +219,7 @@ defmodule JumpTickets.IntegrationRequest.Logic do
       {:ok, existing_ticket}
     else
       result =
-        JumpTickets.External.Notion.update_ticket(existing_ticket.notion_id, %{
+        opts[:notion].update_ticket(existing_ticket.notion_id, %{
           intercom_conversations: [conversation_url | existing_conversations] |> Enum.join(",")
         })
 
@@ -210,20 +227,28 @@ defmodule JumpTickets.IntegrationRequest.Logic do
     end
   end
 
-  defp execute_step(:maybe_update_notion_with_slack, %{
-         steps: %{
-           create_or_update_notion_ticket: %{result: %Ticket{notion_id: notion_id}},
-           maybe_create_slack_channel: %{result: %{url: slack_url}}
-         }
-       }) do
-    JumpTickets.External.Notion.update_ticket(notion_id, %{slack_channel: slack_url})
+  defp execute_step(
+         :maybe_update_notion_with_slack,
+         %{
+           steps: %{
+             create_or_update_notion_ticket: %{result: %Ticket{notion_id: notion_id}},
+             maybe_create_slack_channel: %{result: %{url: slack_url}}
+           }
+         },
+         opts
+       ) do
+    opts[:notion].update_ticket(notion_id, %{slack_channel: slack_url})
   end
 
-  defp execute_step(:maybe_create_slack_channel, %{
-         steps: %{
-           ai_analysis: %{result: {:existing, %Ticket{slack_channel: channel_url}}}
-         }
-       }) do
+  defp execute_step(
+         :maybe_create_slack_channel,
+         %{
+           steps: %{
+             ai_analysis: %{result: {:existing, %Ticket{slack_channel: channel_url}}}
+           }
+         },
+         opts
+       ) do
     %URI{path: path} = URI.parse(channel_url)
 
     channel_id =
@@ -234,28 +259,36 @@ defmodule JumpTickets.IntegrationRequest.Logic do
     {:ok, %{channel_id: channel_id, url: channel_url}}
   end
 
-  defp execute_step(:maybe_create_slack_channel, %{
-         steps: %{
-           ai_analysis: %{result: {:new, %{slug: ai_generated_slug}}},
-           create_or_update_notion_ticket: %{result: %Ticket{ticket_id: ticket_id}}
-         }
-       }) do
+  defp execute_step(
+         :maybe_create_slack_channel,
+         %{
+           steps: %{
+             ai_analysis: %{result: {:new, %{slug: ai_generated_slug}}},
+             create_or_update_notion_ticket: %{result: %Ticket{ticket_id: ticket_id}}
+           }
+         },
+         opts
+       ) do
     channel_name = "#{ticket_id}-#{ai_generated_slug}"
-    JumpTickets.External.Slack.create_channel(channel_name)
+    opts[:slack].create_channel(channel_name)
   end
 
-  defp execute_step(:add_intercom_users_to_slack, %{
-         intercom_conversation_id: conversation_id,
-         steps: %{
-           ai_analysis: %{result: {:existing, _}},
-           maybe_create_slack_channel: %{result: %{channel_id: channel_id}}
-         }
-       }) do
-    with {:ok, admins} <- JumpTickets.External.Intercom.get_participating_admins(conversation_id),
+  defp execute_step(
+         :add_intercom_users_to_slack,
+         %{
+           intercom_conversation_id: conversation_id,
+           steps: %{
+             ai_analysis: %{result: {:existing, _}},
+             maybe_create_slack_channel: %{result: %{channel_id: channel_id}}
+           }
+         },
+         opts
+       ) do
+    with {:ok, admins} <- opts[:intercom].get_participating_admins(conversation_id),
          {:ok, slack_users} <-
-           JumpTickets.External.Slack.get_all_users(),
+           opts[:slack].get_all_users(),
          {:ok, existing_channel_members} <-
-           JumpTickets.External.Slack.list_channel_users(channel_id),
+           opts[:slack].list_channel_users(channel_id),
          slack_user_ids <- UserMatcher.match_users(admins, slack_users) do
       existing_channel_members_ids = existing_channel_members |> Enum.map(& &1.id)
 
@@ -265,7 +298,7 @@ defmodule JumpTickets.IntegrationRequest.Logic do
       if slack_users_ids_to_invite == [] do
         {:ok, nil}
       else
-        {:ok, _} = JumpTickets.External.Slack.invite_users_to_channel(channel_id, slack_user_ids)
+        {:ok, _} = opts[:slack].invite_users_to_channel(channel_id, slack_user_ids)
         {:ok, nil}
       end
 
@@ -273,25 +306,29 @@ defmodule JumpTickets.IntegrationRequest.Logic do
     end
   end
 
-  defp execute_step(:add_intercom_users_to_slack, %{
-         intercom_conversation_id: conversation_id,
-         steps: %{
-           create_or_update_notion_ticket: %{result: %Ticket{notion_url: notion_url}},
-           maybe_create_slack_channel: %{result: %{channel_id: channel_id}}
-         }
-       }) do
-    with {:ok, admins} <- JumpTickets.External.Intercom.get_participating_admins(conversation_id),
+  defp execute_step(
+         :add_intercom_users_to_slack,
+         %{
+           intercom_conversation_id: conversation_id,
+           steps: %{
+             create_or_update_notion_ticket: %{result: %Ticket{notion_url: notion_url}},
+             maybe_create_slack_channel: %{result: %{channel_id: channel_id}}
+           }
+         },
+         opts
+       ) do
+    with {:ok, admins} <- opts[:intercom].get_participating_admins(conversation_id),
          {:ok, slack_users} <-
-           JumpTickets.External.Slack.get_all_users(),
+           opts[:slack].get_all_users(),
          slack_user_ids <- UserMatcher.match_users(admins, slack_users),
          {:ok, _} <-
-           JumpTickets.External.Slack.invite_users_to_channel(channel_id, slack_user_ids),
-         {:ok, channel} <- JumpTickets.External.Slack.set_channel_topic(channel_id, notion_url) do
+           opts[:slack].invite_users_to_channel(channel_id, slack_user_ids),
+         {:ok, channel} <- opts[:slack].set_channel_topic(channel_id, notion_url) do
       {:ok, nil}
     end
   end
 
-  defp execute_step(_, request) do
+  defp execute_step(_, _, _) do
     {:error, :missing_implementation}
   end
 
@@ -317,26 +354,21 @@ defmodule JumpTickets.IntegrationRequest.Logic do
     put_in(request.steps[step_type], updated_step)
   end
 
-  defp generate_id do
-    :crypto.strong_rand_bytes(8)
-    |> Base.encode16(case: :lower)
-  end
-
   @doc """
   Retries a specific step in the integration request.
   """
-  @spec retry_step(Request.t(), step_type()) :: Request.t()
-  def retry_step(request, step_type) do
+  @spec retry_step(Request.t(), step_type(), any()) :: Request.t()
+  def retry_step(request, step_type, opts \\ []) do
     # Reset the specified step and all subsequent steps
     reset_from_step(request, step_type)
-    |> run()
+    |> run(opts)
   end
 
   @doc """
   Retries the entire integration request from the beginning.
   """
   @spec retry_all(Request.t()) :: Request.t()
-  def retry_all(request) do
+  def retry_all(request, opts \\ []) do
     # Reset all steps to pending
     %{
       request
@@ -355,7 +387,7 @@ defmodule JumpTickets.IntegrationRequest.Logic do
           end)
           |> Enum.into(%{})
     }
-    |> run()
+    |> run(opts)
   end
 
   def reset_from_step(request, step_type) do

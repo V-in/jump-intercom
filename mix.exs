@@ -63,7 +63,8 @@ defmodule JumpTickets.MixProject do
       {:tesla, "~> 1.4"},
       {:mock, "~> 0.3.9", only: :test},
       {:anthropix, "~> 0.6"},
-      {:httpoison, "~> 2.2.1", override: true}
+      {:httpoison, "~> 2.2.1", override: true},
+      {:mox, "~> 1.0", only: :test}
     ]
   end
 

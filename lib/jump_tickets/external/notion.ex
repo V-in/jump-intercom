@@ -141,11 +141,15 @@ defmodule JumpTickets.External.Notion.Parser do
     }
   end
 
+  defp extract_id(nil), do: nil
+
   defp extract_id(%{"unique_id" => %{"number" => number, "prefix" => prefix}}) do
     "#{prefix}-#{number}"
   end
 
   # Extract plain text from a title property
+  defp extract_title(nil), do: nil
+
   defp extract_title(%{"title" => title}) do
     case title do
       [%{"plain_text" => text} | _] -> text
@@ -156,6 +160,8 @@ defmodule JumpTickets.External.Notion.Parser do
   defp extract_title(_), do: nil
 
   # Extract plain text from a rich_text property
+  defp extract_rich_text(nil), do: nil
+
   defp extract_rich_text(%{"rich_text" => rich_text}) do
     case rich_text do
       [%{"plain_text" => text} | _] -> text

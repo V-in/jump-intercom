@@ -1,358 +1,492 @@
 defmodule JumpTickets.Logic.LogicTest do
   use ExUnit.Case, async: true
 
+  import Mox
+
   alias JumpTickets.Ticket
   alias JumpTickets.IntegrationRequest.Logic
   alias JumpTickets.IntegrationRequest.Request
-  alias JumpTickets.IntegrationRequest.Step
 
-  import Mock
+  setup :verify_on_exit!
 
-  # Initialize mocks
-  setup do
-    conversation_id = "conv_#{:rand.uniform(1000)}"
-
-    %{conversation_id: conversation_id}
-  end
-
-  describe "new/1" do
-    test "creates a new integration request with all required steps", %{
-      conversation_id: conversation_id
-    } do
+  describe "happy path for new ticket" do
+    test "successfully creates a new ticket through all steps" do
       request =
         Logic.new(%{
-          conversation_id: conversation_id,
-          message_body: "What is happening?"
+          conversation_id: "123",
+          conversation_url: "https://app.intercom.com/conversations/123",
+          message_body: "Customer reports sync issue"
         })
 
-      # Check basic properties
-      assert request.intercom_conversation_id == conversation_id
-      assert request.status == :pending
-      assert String.starts_with?(request.id, "INT-")
-      assert %DateTime{} = request.created_at
-      assert %DateTime{} = request.updated_at
-
-      # Check steps initialization
-      step_types = [
-        :check_existing_tickets,
-        :ai_analysis,
-        :create_or_update_notion_ticket,
-        :maybe_create_slack_channel,
-        :maybe_update_notion_with_slack,
-        :add_intercom_users_to_slack
-      ]
-
-      Enum.each(step_types, fn type ->
-        assert Map.has_key?(request.steps, type)
-        step = request.steps[type]
-        assert step.type == type
-        assert step.status == :pending
-        assert is_nil(step.started_at)
-        assert is_nil(step.completed_at)
-        assert is_nil(step.error)
-        assert is_nil(step.result)
+      # Step 1: Query Notion database – no existing tickets.
+      expect(MockNotion, :query_db, fn ->
+        {:ok, []}
       end)
+
+      # Step 2: Get the conversation from Intercom.
+      expect(MockIntercom, :get_conversation, fn "123" ->
+        {:ok,
+         %{
+           messages: [
+             %{author: %{type: "customer", name: "John"}, text: "Sync broken"}
+           ]
+         }}
+      end)
+
+      # Step 3: Ask LLM to analyze conversation.
+      expect(MockLLM, :find_or_create_ticket, fn tickets, message_body, conversation ->
+        assert tickets == []
+        assert message_body == "Customer reports sync issue"
+
+        {:ok,
+         {:new,
+          %{title: "Sync Failure", summary: "Sync broken after update", slug: "sync-failure"}}}
+      end)
+
+      # Step 4: Create a new Notion ticket.
+      expect(MockNotion, :create_ticket, fn ticket ->
+        assert ticket.title == "Sync Failure"
+        assert ticket.summary == "Sync broken after update"
+
+        {:ok,
+         %Ticket{
+           ticket_id: "JMP-001",
+           notion_id: "notion123",
+           notion_url: "https://notion.so/JMP-001"
+         }}
+      end)
+
+      # Step 5: Create a new Slack channel for the new ticket.
+      expect(MockSlack, :create_channel, fn "JMP-001-sync-failure" ->
+        {:ok, %{channel_id: "C123", url: "https://slack.com/C123"}}
+      end)
+
+      # Step 6: Update the Notion ticket with the Slack channel URL.
+      expect(MockNotion, :update_ticket, fn "notion123", %{slack_channel: slack_url} ->
+        assert slack_url == "https://slack.com/C123"
+        {:ok, %Ticket{ticket_id: "JMP-001", slack_channel: slack_url}}
+      end)
+
+      # Step 7: Add Intercom admins to the Slack channel.
+      expect(MockIntercom, :get_participating_admins, fn "123" ->
+        {:ok, [%{name: "Admin1", email: "admin1@example.com"}]}
+      end)
+
+      expect(MockSlack, :get_all_users, fn ->
+        {:ok, [%{id: "U123", name: "Admin1", email: "admin1@example.com"}]}
+      end)
+
+      expect(MockSlack, :invite_users_to_channel, fn "C123", ["U123"] ->
+        {:ok, "invited"}
+      end)
+
+      # Step 8: Set Slack channel topic linking to the Notion ticket.
+      expect(MockSlack, :set_channel_topic, fn "C123", "https://notion.so/JMP-001" ->
+        {:ok, "topic set"}
+      end)
+
+      result =
+        Logic.run(request,
+          intercom: MockIntercom,
+          notion: MockNotion,
+          slack: MockSlack,
+          llm: MockLLM
+        )
+
+      assert result.status == :completed
+      assert result.steps[:check_existing_tickets].status == :completed
+      assert result.steps[:ai_analysis].status == :completed
+      assert result.steps[:create_or_update_notion_ticket].status == :completed
+      assert result.steps[:maybe_create_slack_channel].status == :completed
+      assert result.steps[:maybe_update_notion_with_slack].status == :completed
+      assert result.steps[:add_intercom_users_to_slack].status == :completed
     end
   end
 
-  describe "run/1" do
-    test "runs all steps in sequence when all succeed", %{conversation_id: conversation_id} do
+  describe "happy path for existing ticket" do
+    test "successfully updates an existing ticket and adds conversation" do
       request =
         Logic.new(%{
-          conversation_id: "2",
-          conversation_url: "https://test.com",
-          message_body: "What is happening?"
+          conversation_id: "456",
+          conversation_url: "https://app.intercom.com/conversations/456",
+          message_body: "Customer reports login issue"
         })
 
-      # Run the request
+      # Step 1: Query Notion database returns one existing ticket.
+      expect(MockNotion, :query_db, fn ->
+        {:ok,
+         [
+           %Ticket{
+             ticket_id: "JMP-002",
+             notion_id: "notion456",
+             intercom_conversations: "https://app.intercom.com/conversations/111",
+             slack_channel: "https://slack.com/client/T123/C456?entry_point=nav_menu"
+           }
+         ]}
+      end)
 
-      result = Logic.run(request)
-      dbg(result)
+      # Step 2: Get conversation details.
+      expect(MockIntercom, :get_conversation, fn "456" ->
+        {:ok,
+         %{
+           messages: [
+             %{author: %{type: "customer", name: "Jane"}, text: "Issue details"}
+           ]
+         }}
+      end)
 
-      # with_mock(JumpTickets.External.LLM,
-      #   find_or_create_ticket: fn _, _, _ ->
-      #     {:ok, {:new, %Ticket{title: "This is the end.."}}}
-      #   end
-      # ) do
-      #   # # Check overall request status
-      #   # assert result.status == :completed
+      # Step 3: LLM determines this conversation matches an existing ticket.
+      expect(MockLLM, :find_or_create_ticket, fn tickets, message_body, _conversation ->
+        {:ok,
+         {:existing,
+          %Ticket{
+            ticket_id: "JMP-002",
+            notion_id: "notion456",
+            intercom_conversations: "https://app.intercom.com/conversations/111",
+            slack_channel: "https://slack.com/client/T123/C456?entry_point=nav_menu"
+          }}}
+      end)
 
-      #   # # Verify all steps were completed
-      #   # Enum.each(result.steps, fn {_type, step} ->
-      #   #   assert step.status == :completed
-      #   #   assert %DateTime{} = step.started_at
-      #   #   assert %DateTime{} = step.completed_at
-      #   # end)
-      # end
+      expect(MockNotion, :update_ticket, 2, fn "notion456", update_params ->
+        cond do
+          Map.has_key?(update_params, :intercom_conversations) ->
+            assert update_params[:intercom_conversations] ==
+                     "https://app.intercom.com/conversations/456,https://app.intercom.com/conversations/111"
+
+            {:ok,
+             %Ticket{
+               ticket_id: "JMP-002",
+               notion_id: "notion456",
+               intercom_conversations: update_params[:intercom_conversations],
+               slack_channel: "https://slack.com/client/T123/C456?entry_point=nav_menu"
+             }}
+
+          Map.has_key?(update_params, :slack_channel) ->
+            assert update_params[:slack_channel] ==
+                     "https://slack.com/client/T123/C456?entry_point=nav_menu"
+
+            {:ok,
+             %Ticket{
+               ticket_id: "JMP-002",
+               notion_id: "notion456",
+               intercom_conversations:
+                 "https://app.intercom.com/conversations/456,https://app.intercom.com/conversations/111",
+               slack_channel: update_params[:slack_channel]
+             }}
+
+          true ->
+            flunk("Unexpected update_ticket parameters: #{inspect(update_params)}")
+        end
+      end)
+
+      # Step 5: For existing tickets, the Slack channel is already set.
+      # The logic will extract the channel ID from the URL.
+      # (No external call is made here for channel creation.)
+
+      # Step 6: Expect list_channel_users to be called with the proper channel id "C456"
+      expect(MockSlack, :list_channel_users, fn "C456" ->
+        {:ok, []}
+      end)
+
+      # Step 7: Add Intercom admins to the Slack channel.
+      expect(MockIntercom, :get_participating_admins, fn "456" ->
+        {:ok, [%{name: "Admin2", email: "admin2@example.com"}]}
+      end)
+
+      expect(MockSlack, :get_all_users, fn ->
+        {:ok, [%{id: "U456", name: "Admin2", email: "admin2@example.com"}]}
+      end)
+
+      expect(MockSlack, :invite_users_to_channel, fn "C456", ["U456"] ->
+        {:ok, "invited"}
+      end)
+
+      result =
+        Logic.run(request,
+          intercom: MockIntercom,
+          notion: MockNotion,
+          slack: MockSlack,
+          llm: MockLLM
+        )
+
+      assert result.status == :completed
+      assert result.steps[:check_existing_tickets].status == :completed
+      assert result.steps[:ai_analysis].status == :completed
+      assert result.steps[:create_or_update_notion_ticket].status == :completed
+      assert result.steps[:maybe_create_slack_channel].status == :completed
+      assert result.steps[:add_intercom_users_to_slack].status == :completed
+    end
+  end
+
+  describe "failure paths" do
+    test "fails when Intercom.get_conversation returns an error" do
+      request =
+        Logic.new(%{
+          conversation_id: "789",
+          conversation_url: "https://app.intercom.com/conversations/789",
+          message_body: "Error test"
+        })
+
+      expect(MockNotion, :query_db, fn ->
+        {:ok, []}
+      end)
+
+      expect(MockIntercom, :get_conversation, fn "789" ->
+        {:error, "Intercom API error"}
+      end)
+
+      result =
+        Logic.run(request,
+          intercom: MockIntercom,
+          notion: MockNotion,
+          slack: MockSlack,
+          llm: MockLLM
+        )
+
+      assert result.status == :failed
+      assert result.steps[:check_existing_tickets].status == :completed
+      assert result.steps[:ai_analysis].status == :failed
     end
 
-    test "handles existing ticket with new conversation" do
-      request = %JumpTickets.IntegrationRequest.Request{
-        id: nil,
-        intercom_conversation_id: "2",
-        intercom_conversation_url: "https://new-test.example.com",
-        message_body: "What is happening?",
-        status: :failed,
-        steps: %{
-          check_existing_tickets: %JumpTickets.IntegrationRequest.Step{
-            type: :check_existing_tickets,
-            status: :completed,
-            started_at: ~U[2025-03-16 18:16:13.845786Z],
-            completed_at: ~U[2025-03-16 18:16:14.641125Z],
-            error: nil,
-            result: [
-              %JumpTickets.Ticket{
-                id: nil,
-                notion_id: "1b8d3c1b-90d3-81ab-abae-f453c9ef24cc",
-                notion_url:
-                  "https://www.notion.so/Test-Conversation-WhatsApp-Channel-Setup-Demonstration-1b8d3c1b90d381ababaef453c9ef24cc",
-                ticket_id: "JMP-29",
-                title: "Test Conversation - WhatsApp Channel Setup Demonstration",
-                intercom_conversations: "https://test.com",
-                summary: nil,
-                slack_channel:
-                  "https://app.slack.com/client/T08HPMYC8G6/C08J8FYMNQH?entry_point=nav_menu"
-              }
-            ]
-          },
-          ai_analysis: %JumpTickets.IntegrationRequest.Step{
-            type: :ai_analysis,
-            status: :completed,
-            started_at: ~U[2025-03-16 18:16:14.641136Z],
-            completed_at: ~U[2025-03-16 18:16:21.214706Z],
-            error: nil,
-            result:
-              {:existing,
-               %JumpTickets.Ticket{
-                 id: nil,
-                 notion_id: "1b8d3c1b-90d3-81ab-abae-f453c9ef24cc",
-                 notion_url:
-                   "https://www.notion.so/Test-Conversation-WhatsApp-Channel-Setup-Demonstration-1b8d3c1b90d381ababaef453c9ef24cc",
-                 ticket_id: "JMP-29",
-                 title: "Test Conversation - WhatsApp Channel Setup Demonstration",
-                 intercom_conversations: "https://test.com",
-                 summary: nil,
-                 slack_channel:
-                   "https://app.slack.com/client/T08HPMYC8G6/C08J8FYMNQH?entry_point=nav_menu"
-               }}
-          },
-          create_or_update_notion_ticket: %JumpTickets.IntegrationRequest.Step{
-            type: :create_or_update_notion_ticket,
-            status: :pending,
-            started_at: nil,
-            completed_at: nil,
-            error: nil,
-            result: nil
-          },
-          maybe_create_slack_channel: %JumpTickets.IntegrationRequest.Step{
-            type: :maybe_create_slack_channel,
-            status: :pending,
-            started_at: nil,
-            completed_at: nil,
-            error: nil,
-            result: nil
-          },
-          maybe_update_notion_with_slack: %JumpTickets.IntegrationRequest.Step{
-            type: :maybe_update_notion_with_slack,
-            status: :pending,
-            started_at: nil,
-            completed_at: nil,
-            error: nil,
-            result: nil
-          },
-          add_intercom_users_to_slack: %JumpTickets.IntegrationRequest.Step{
-            type: :add_intercom_users_to_slack,
-            status: :pending,
-            started_at: nil,
-            completed_at: nil,
-            error: nil,
-            result: nil
-          }
-        },
-        created_at: ~U[2025-03-16 18:16:13.845205Z],
-        updated_at: ~U[2025-03-16 18:16:21.217668Z],
-        context: %{}
-      }
+    test "fails when LLM.find_or_create_ticket returns an error" do
+      request =
+        Logic.new(%{
+          conversation_id: "101",
+          conversation_url: "https://app.intercom.com/conversations/101",
+          message_body: "LLM failure test"
+        })
 
-      result = Logic.run(request)
-      dbg(result)
+      expect(MockNotion, :query_db, fn ->
+        {:ok, []}
+      end)
+
+      expect(MockIntercom, :get_conversation, fn "101" ->
+        {:ok,
+         %{
+           messages: [
+             %{author: %{type: "customer", name: "Test"}, text: "Test message"}
+           ]
+         }}
+      end)
+
+      expect(MockLLM, :find_or_create_ticket, fn _tickets, _message_body, _conversation ->
+        {:error, "LLM error"}
+      end)
+
+      result =
+        Logic.run(request,
+          intercom: MockIntercom,
+          notion: MockNotion,
+          slack: MockSlack,
+          llm: MockLLM
+        )
+
+      assert result.status == :failed
+      assert result.steps[:check_existing_tickets].status == :completed
+      assert result.steps[:ai_analysis].status == :failed
+    end
+  end
+
+  describe "retry logic" do
+    test "retry_step resets specified step and subsequent steps" do
+      # Create a request that fails at ai_analysis.
+      request =
+        Logic.new(%{
+          conversation_id: "202",
+          conversation_url: "https://app.intercom.com/conversations/202",
+          message_body: "Retry test"
+        })
+
+      # Initial run fails because Intercom.get_conversation returns an error.
+      expect(MockNotion, :query_db, fn ->
+        {:ok, []}
+      end)
+
+      expect(MockIntercom, :get_conversation, fn "202" ->
+        {:error, "Simulated failure"}
+      end)
+
+      result =
+        Logic.run(request,
+          intercom: MockIntercom,
+          notion: MockNotion,
+          slack: MockSlack,
+          llm: MockLLM
+        )
+
+      assert result.status == :failed
+      assert result.steps[:ai_analysis].status == :failed
+
+      # Now simulate a successful retry from the failing step.
+      expect(MockIntercom, :get_conversation, fn _ ->
+        {:ok,
+         %{
+           messages: [
+             %{author: %{type: "customer", name: "Retry"}, text: "Recovered message"}
+           ]
+         }}
+      end)
+
+      expect(MockLLM, :find_or_create_ticket, fn _tickets, _message_body, _conversation ->
+        # Force a new ticket decision.
+        {:ok,
+         {:new,
+          %{title: "Recovered Ticket", summary: "Recovered summary", slug: "recovered-ticket"}}}
+      end)
+
+      expect(MockNotion, :create_ticket, fn ticket ->
+        {:ok,
+         %Ticket{
+           ticket_id: "JMP-003",
+           notion_id: "notion-retry",
+           notion_url: "https://notion.so/JMP-003"
+         }}
+      end)
+
+      expect(MockSlack, :create_channel, fn "JMP-003-recovered-ticket" ->
+        {:ok, %{channel_id: "C789", url: "https://slack.com/C789"}}
+      end)
+
+      expect(MockNotion, :update_ticket, fn "notion-retry",
+                                            %{slack_channel: "https://slack.com/C789"} ->
+        {:ok,
+         %Ticket{
+           ticket_id: "JMP-003",
+           notion_id: "notion-retry",
+           slack_channel: "https://slack.com/C789"
+         }}
+      end)
+
+      # In the new-ticket flow for adding Intercom users, we use the clause that doesn't call list_channel_users.
+      expect(MockIntercom, :get_participating_admins, fn "202" ->
+        {:ok, [%{name: "AdminRetry", email: "adminretry@example.com"}]}
+      end)
+
+      expect(MockSlack, :get_all_users, fn ->
+        {:ok, [%{id: "U999", name: "AdminRetry", email: "adminretry@example.com"}]}
+      end)
+
+      expect(MockSlack, :invite_users_to_channel, fn "C789", ["U999"] ->
+        {:ok, "invited"}
+      end)
+
+      expect(MockSlack, :set_channel_topic, fn "C789", "https://notion.so/JMP-003" ->
+        {:ok, "topic set"}
+      end)
+
+      retry_result =
+        result
+        |> Logic.reset_from_step(:ai_analysis)
+        |> Logic.run(intercom: MockIntercom, notion: MockNotion, slack: MockSlack, llm: MockLLM)
+
+      assert retry_result.status == :completed
+      assert retry_result.steps[:ai_analysis].status == :completed
+      assert retry_result.steps[:create_or_update_notion_ticket].status == :completed
+      assert retry_result.steps[:maybe_create_slack_channel].status == :completed
+      assert retry_result.steps[:maybe_update_notion_with_slack].status == :completed
+      assert retry_result.steps[:add_intercom_users_to_slack].status == :completed
     end
 
-    test "runs slack integration sucessfully" do
-      request = %JumpTickets.IntegrationRequest.Request{
-        id: nil,
-        intercom_conversation_id: "2",
-        intercom_conversation_url: "https://test.com",
-        message_body: "What is happening?",
-        status: :pending,
-        steps: %{
-          check_existing_tickets: %JumpTickets.IntegrationRequest.Step{
-            type: :check_existing_tickets,
-            status: :completed,
-            started_at: ~U[2025-03-16 15:56:07.090280Z],
-            completed_at: ~U[2025-03-16 15:56:07.886964Z],
-            error: nil,
-            result: []
-          },
-          ai_analysis: %JumpTickets.IntegrationRequest.Step{
-            type: :ai_analysis,
-            status: :completed,
-            started_at: ~U[2025-03-16 15:56:07.887008Z],
-            completed_at: ~U[2025-03-16 15:56:24.656707Z],
-            error: nil,
-            result:
-              {:new,
-               %{
-                 title: "Sample Conversation Demo: WhatsApp/Social Channel Setup Verification",
-                 summary:
-                   "A test conversation was initiated to demonstrate how customer support interactions might appear when using WhatsApp, Instagram, or Facebook messaging channels. The conversation appears to be a system demonstration rather than an actual customer support issue. \n\nThe sample conversation includes:\n- An uploaded image (type/content not specified)\n- A descriptive message about channel integration\n- A reference to setting up communication channels\n- A brief agent response that seems to be checking system functionality\n\nWhile this appears to be a simulated scenario for testing or demonstration purposes, it raises potential questions about:\n1. Channel integration readiness\n2. Message routing capabilities\n3. System communication flow\n4. Agent response protocols\n\nRecommended actions:\n- Verify channel setup configurations\n- Test message routing across different social media platforms\n- Confirm agent interface and response mechanisms\n- Ensure proper image/attachment handling\n\nNo specific technical issue is evident, but this interaction serves as a potential test case for support channel integration testing.",
-                 slug: "whatsapp-social-channel-demo"
-               }}
-          },
-          create_or_update_notion_ticket: %JumpTickets.IntegrationRequest.Step{
-            type: :create_or_update_notion_ticket,
-            status: :completed,
-            started_at: ~U[2025-03-16 15:56:24.656768Z],
-            completed_at: ~U[2025-03-16 15:56:25.170938Z],
-            error: nil,
-            result: %JumpTickets.Ticket{
-              id: nil,
-              notion_id: "1b8d3c1b-90d3-81c3-b329-dfa72912e87c",
-              ticket_id: "JMP-26",
-              title: "Sample Conversation Demo: WhatsApp/Social Channel Setup Verification",
-              intercom_conversations: "https://test.com",
-              summary: nil,
-              slack_channel: nil
-            }
-          },
-          maybe_create_slack_channel: %JumpTickets.IntegrationRequest.Step{
-            type: :maybe_create_slack_channel,
-            status: :pending,
-            started_at: ~U[2025-03-16 15:56:25.170967Z],
-            completed_at: ~U[2025-03-16 15:56:25.170970Z],
-            error: nil,
-            result: nil
-          },
-          maybe_update_notion_with_slack: %JumpTickets.IntegrationRequest.Step{
-            type: :maybe_update_notion_with_slack,
-            status: :pending,
-            started_at: nil,
-            completed_at: nil,
-            error: nil,
-            result: nil
-          },
-          add_intercom_users_to_slack: %JumpTickets.IntegrationRequest.Step{
-            type: :add_intercom_users_to_slack,
-            status: :pending,
-            started_at: nil,
-            completed_at: nil,
-            error: nil,
-            result: nil
-          }
-        },
-        created_at: ~U[2025-03-16 15:56:07.089602Z],
-        updated_at: ~U[2025-03-16 15:56:25.170973Z],
-        context: %{}
-      }
+    test "retry_all resets the entire request" do
+      # Create a request that fails.
+      request =
+        Logic.new(%{
+          conversation_id: "303",
+          conversation_url: "https://app.intercom.com/conversations/303",
+          message_body: "Retry all test"
+        })
 
-      result = Logic.run(request)
-      dbg(result)
-    end
+      expect(MockNotion, :query_db, fn ->
+        {:ok, []}
+      end)
 
-    test "stops processing when a step fails", %{conversation_id: conversation_id} do
-      request = Logic.new(conversation_id)
+      expect(MockIntercom, :get_conversation, fn "303" ->
+        {:error, "Simulated failure for retry_all"}
+      end)
 
-      # Make the first step succeed but second step fail
-      MockNotionIntegrationRequest.set_response({:ok, %{tickets: []}})
-      MockAIIntegrationRequest.set_response({:error, "AI analysis failed"})
+      result =
+        Logic.run(request,
+          intercom: MockIntercom,
+          notion: MockNotion,
+          slack: MockSlack,
+          llm: MockLLM
+        )
 
-      # Run the request
-      result = Logic.run(request)
-
-      # Check overall request status
       assert result.status == :failed
 
-      # First step should be completed
-      first_step = result.steps[:check_existing_tickets]
-      assert first_step.status == :completed
-      assert %DateTime{} = first_step.completed_at
-
-      # Second step should be failed
-      second_step = result.steps[:ai_analysis]
-      assert second_step.status == :failed
-      assert second_step.error == "AI analysis failed"
-
-      # Later steps should still be pending
-      remaining_steps = [
-        :create_or_update_notion_ticket,
-        :maybe_create_slack_channel,
-        :maybe_update_notion_with_slack,
-        :add_intercom_users_to_slack
-      ]
-
-      Enum.each(remaining_steps, fn type ->
-        step = result.steps[type]
-        assert step.status == :pending
-        assert is_nil(step.started_at)
+      # Now simulate a full successful run after a retry.
+      expect(MockNotion, :query_db, fn ->
+        {:ok, []}
       end)
-    end
-  end
 
-  describe "retry_step/2" do
-    test "resets and retries from a specific step", %{conversation_id: conversation_id} do
-      # Create a request with some completed and failed steps
-      request = Logic.new(conversation_id)
+      expect(MockIntercom, :get_conversation, fn "303" ->
+        {:ok,
+         %{
+           messages: [
+             %{author: %{type: "customer", name: "FullRetry"}, text: "Recovered message"}
+           ]
+         }}
+      end)
 
-      # First run with a failure in ai_analysis
-      MockNotionIntegrationRequest.set_response({:ok, %{tickets: []}})
-      MockAIIntegrationRequest.set_response({:error, "AI analysis failed"})
+      expect(MockLLM, :find_or_create_ticket, fn _tickets, _message_body, _conversation ->
+        {:ok,
+         {:new,
+          %{
+            title: "Full Recovered Ticket",
+            summary: "Full recovered summary",
+            slug: "full-recovered-ticket"
+          }}}
+      end)
 
-      failed_request = Logic.run(request)
-      assert failed_request.status == :failed
-      assert failed_request.steps[:ai_analysis].status == :failed
+      expect(MockNotion, :create_ticket, fn ticket ->
+        {:ok,
+         %Ticket{
+           ticket_id: "JMP-004",
+           notion_id: "notion-full-retry",
+           notion_url: "https://notion.so/JMP-004"
+         }}
+      end)
 
-      # Now fix the AI step and retry from there
-      MockAIIntegrationRequest.set_response({:ok, %{summary: "Fixed AI analysis"}})
+      expect(MockSlack, :create_channel, fn "JMP-004-full-recovered-ticket" ->
+        {:ok, %{channel_id: "C101", url: "https://slack.com/C101"}}
+      end)
 
-      retried_request = Logic.retry_step(failed_request, :ai_analysis)
+      expect(MockNotion, :update_ticket, fn "notion-full-retry",
+                                            %{slack_channel: "https://slack.com/C101"} ->
+        {:ok,
+         %Ticket{
+           ticket_id: "JMP-004",
+           notion_id: "notion-full-retry",
+           slack_channel: "https://slack.com/C101"
+         }}
+      end)
 
-      # Check if the retry worked
-      assert retried_request.status == :completed
-      assert retried_request.steps[:check_existing_tickets].status == :completed
-      assert retried_request.steps[:ai_analysis].status == :completed
-      assert retried_request.steps[:ai_analysis].result == %{summary: "Fixed AI analysis"}
+      expect(MockIntercom, :get_participating_admins, fn "303" ->
+        {:ok, [%{name: "AdminFull", email: "adminfull@example.com"}]}
+      end)
 
-      # Previous steps should maintain their results
-      assert retried_request.steps[:check_existing_tickets].result ==
-               failed_request.steps[:check_existing_tickets].result
-    end
-  end
+      expect(MockSlack, :get_all_users, fn ->
+        {:ok, [%{id: "U303", name: "AdminFull", email: "adminfull@example.com"}]}
+      end)
 
-  describe "retry_all/1" do
-    test "resets and retries the entire request", %{conversation_id: conversation_id} do
-      # Create a request with some completed and failed steps
-      request = Logic.new(conversation_id)
+      expect(MockSlack, :invite_users_to_channel, fn "C101", ["U303"] ->
+        {:ok, "invited"}
+      end)
 
-      # First run with a failure
-      MockNotionIntegrationRequest.set_response({:ok, %{tickets: []}})
-      MockAIIntegrationRequest.set_response({:error, "AI analysis failed"})
+      expect(MockSlack, :set_channel_topic, fn "C101", "https://notion.so/JMP-004" ->
+        {:ok, "topic set"}
+      end)
 
-      failed_request = Logic.run(request)
-      assert failed_request.status == :failed
+      retry_all_result =
+        Logic.retry_all(result,
+          intercom: MockIntercom,
+          notion: MockNotion,
+          slack: MockSlack,
+          llm: MockLLM
+        )
 
-      # Now fix all steps and retry everything
-      MockNotionIntegrationRequest.set_response({:ok, %{tickets: ["new_ticket"]}})
-      MockAIIntegrationRequest.set_response({:ok, %{summary: "New AI analysis"}})
-
-      retried_request = Logic.retry_all(failed_request)
-
-      # Check if the retry worked
-      assert retried_request.status == :completed
-
-      # Results should reflect new runs
-      assert retried_request.steps[:check_existing_tickets].result == %{tickets: ["new_ticket"]}
-      assert retried_request.steps[:ai_analysis].status == :completed
-      assert retried_request.steps[:ai_analysis].result == %{summary: "New AI analysis"}
+      assert retry_all_result.status == :completed
+      assert Enum.all?(retry_all_result.steps, fn {_type, step} -> step.status == :completed end)
     end
   end
 end

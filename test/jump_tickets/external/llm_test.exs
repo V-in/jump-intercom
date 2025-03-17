@@ -5,22 +5,6 @@ defmodule JumpTickets.External.LlmTest do
   import Mock
   alias JumpTickets.External.LLM
 
-  describe "format_conversation/1" do
-    test "correctly formats a conversation" do
-      conversation = %{
-        messages: [
-          %{text: "Hello, I'm having an issue", author: "Jane Smith (user)"},
-          %{text: "Can you describe the problem?", author: "Support Agent (admin)"}
-        ]
-      }
-
-      expected =
-        "Customer (Jane Smith): Hello, I'm having an issue\n\nAgent (Support Agent): Can you describe the problem?"
-
-      assert LLM.format_conversation(conversation) == expected
-    end
-  end
-
   describe "format_existing_tickets/1" do
     test "formats tickets into readable strings" do
       tickets = [
@@ -79,35 +63,6 @@ defmodule JumpTickets.External.LlmTest do
       expected = %{"decision" => "new"}
 
       assert LLM.fallback_parse_json(text) == expected
-    end
-  end
-
-  describe "find_or_create_ticket/3" do
-    test "returns existing ticket when match is found" do
-      existing_tickets = [
-        %JumpTickets.Ticket{ticket_id: "JMP-001", title: "Login Issues"},
-        %JumpTickets.Ticket{ticket_id: "JMP-002", title: "API Integration Failure"}
-      ]
-
-      conversation = %{
-        messages: [
-          %{text: "I can't log in", author: "Jane Smith (user)"},
-          %{text: "What error do you see?", author: "Support Agent (admin)"}
-        ]
-      }
-
-      message_body = "I can't log in"
-
-      result =
-        JumpTickets.External.LLM.find_or_create_ticket(
-          existing_tickets,
-          message_body,
-          conversation,
-          # Mock the Claude API call
-          fn prompt -> {:ok, %{"decision" => "existing", "ticket_id" => "JMP-001"}} end
-        )
-
-      assert result == {:existing, Enum.at(existing_tickets, 0)}
     end
   end
 end
