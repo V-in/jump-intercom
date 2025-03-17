@@ -181,7 +181,11 @@ defmodule JumpTickets.External.LLM do
   Makes the actual request to Claude via the Anthropic API
   """
   def request_claude_analysis(prompt) do
-    client = Anthropix.init(Application.get_env(:jump_tickets, :claude_secret))
+    client =
+      Anthropix.init(Application.get_env(:jump_tickets, :claude_secret),
+        retry: :safe_transient,
+        max_retries: 5
+      )
 
     response =
       Anthropix.chat(client,

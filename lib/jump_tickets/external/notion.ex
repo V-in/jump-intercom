@@ -4,12 +4,33 @@ defmodule JumpTickets.External.Notion do
 
   def query_db() do
     db_id = Application.get_env(:jump_tickets, :notion_db_id)
+    fetch_all_pages(db_id)
+  end
 
-    result =
-      Notionex.API.query_database(%{database_id: db_id, page_size: 20})
-      |> __MODULE__.Parser.parse_response()
+  defp fetch_all_pages(db_id, start_cursor \\ nil, accumulated_results \\ []) do
+    query_params = %{
+      database_id: db_id,
+      page_size: 100
+    }
 
-    {:ok, result}
+    # Add start_cursor if we're continuing pagination
+    query_params =
+      if start_cursor, do: Map.put(query_params, :start_cursor, start_cursor), else: query_params
+
+    case Notionex.API.query_database(query_params) do
+      %Notionex.Object.List{results: results, has_more: true, next_cursor: next_cursor} ->
+        # More pages available, recurse with the next cursor
+        parsed_results = Enum.map(results, &__MODULE__.Parser.parse_ticket_page/1)
+        fetch_all_pages(db_id, next_cursor, accumulated_results ++ parsed_results)
+
+      %Notionex.Object.List{results: results, has_more: false} ->
+        # Last page, return all accumulated results plus this page
+        parsed_results = Enum.map(results, &__MODULE__.Parser.parse_ticket_page/1)
+        {:ok, accumulated_results ++ parsed_results}
+
+      error ->
+        {:error, "Failed to query database: #{inspect(error)}"}
+    end
   end
 
   def create_ticket(%Ticket{} = ticket) do

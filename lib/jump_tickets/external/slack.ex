@@ -4,7 +4,8 @@ defmodule JumpTickets.External.Slack do
   """
 
   require Logger
-  alias HTTPoison.Response
+
+  alias JumpTickets.External.Slack.Client
 
   @slack_api_url "https://slack.com/api"
 
@@ -16,8 +17,6 @@ defmodule JumpTickets.External.Slack do
   Creates a new Slack channel with the given name
   """
   def create_channel(channel_name) do
-    url = "#{@slack_api_url}/conversations.create"
-
     # Normalize channel name (lowercase, no spaces, only alphanumeric and hyphens)
     normalized_name =
       channel_name
@@ -26,41 +25,30 @@ defmodule JumpTickets.External.Slack do
       |> String.replace(~r/-+/, "-")
       |> String.trim("-")
 
-    body =
-      Jason.encode!(%{
-        name: normalized_name,
-        is_private: false
-      })
+    body = %{
+      name: normalized_name,
+      is_private: false
+    }
 
-    headers = [
-      {"Authorization", "Bearer #{get_slack_token()}"},
-      {"Content-Type", "application/json; charset=utf-8"}
-    ]
-
-    case HTTPoison.post(url, body, headers) do
-      {:ok, %Response{status_code: 200, body: "{\"ok\":false,\"error\":\"name_taken\"}"} = resp} ->
+    case Client.post("/conversations.create", body) do
+      {:ok, %Tesla.Env{status: 200, body: %{"ok" => false, "error" => "name_taken"}}} ->
         get_channel(channel_name)
 
-      {:ok, %Response{status_code: 200, body: response_body} = resp} ->
-        parsed = Jason.decode!(response_body)
+      {:ok, %Tesla.Env{status: 200, body: %{"ok" => true, "channel" => channel}}} ->
+        {:ok,
+         %{
+           channel_id: channel["id"],
+           url:
+             "https://app.slack.com/client/#{channel["context_team_id"]}/#{channel["id"]}?entry_point=nav_menu"
+         }}
 
-        if parsed["ok"] do
-          channel = parsed["channel"]
-
-          {:ok,
-           %{
-             channel_id: channel["id"],
-             url:
-               "https://app.slack.com/client/#{channel["context_team_id"]}/#{channel["id"]}?entry_point=nav_menu"
-           }}
-        else
-          Logger.error("Failed to create Slack channel: #{parsed["error"]}")
-          {:error, parsed["error"]}
-        end
-
-      {:error, error} ->
-        Logger.error("HTTP error when creating Slack channel: #{inspect(error)}")
+      {:ok, %Tesla.Env{status: 200, body: %{"ok" => false, "error" => error}}} ->
+        Logger.error("Failed to create Slack channel: #{error}")
         {:error, error}
+
+      {:error, reason} ->
+        Logger.error("HTTP error when creating Slack channel: #{inspect(reason)}")
+        {:error, reason}
     end
   end
 
@@ -68,33 +56,22 @@ defmodule JumpTickets.External.Slack do
   Sets the topic of the given channel
   """
   def set_channel_topic(channel_id, topic) do
-    url = "#{@slack_api_url}/conversations.setTopic"
+    body = %{
+      channel: channel_id,
+      topic: topic
+    }
 
-    body =
-      Jason.encode!(%{
-        channel: channel_id,
-        topic: topic
-      })
+    case Client.post("/conversations.setTopic", body) do
+      {:ok, %Tesla.Env{status: 200, body: %{"ok" => true} = response}} ->
+        {:ok, response}
 
-    headers = [
-      {"Authorization", "Bearer #{get_slack_token()}"},
-      {"Content-Type", "application/json; charset=utf-8"}
-    ]
-
-    case HTTPoison.post(url, body, headers) do
-      {:ok, %Response{status_code: 200, body: response_body}} ->
-        parsed = Jason.decode!(response_body)
-
-        if parsed["ok"] do
-          {:ok, parsed}
-        else
-          Logger.error("Failed to set channel topic: #{parsed["error"]}")
-          {:error, parsed["error"]}
-        end
-
-      {:error, error} ->
-        Logger.error("HTTP error when setting channel topic: #{inspect(error)}")
+      {:ok, %Tesla.Env{status: 200, body: %{"ok" => false, "error" => error}}} ->
+        Logger.error("Failed to set channel topic: #{error}")
         {:error, error}
+
+      {:error, reason} ->
+        Logger.error("HTTP error when setting channel topic: #{inspect(reason)}")
+        {:error, reason}
     end
   end
 
@@ -102,37 +79,27 @@ defmodule JumpTickets.External.Slack do
   Gets all users from Slack
   """
   def get_all_users do
-    url = "#{@slack_api_url}/users.list"
+    case Client.get("/users.list") do
+      {:ok, %Tesla.Env{status: 200, body: %{"ok" => true, "members" => members}}} ->
+        users =
+          members
+          |> Enum.map(
+            &%{
+              id: &1["id"],
+              name: &1["real_name"],
+              email: get_in(&1, ["profile", "email"])
+            }
+          )
 
-    headers = [
-      {"Authorization", "Bearer #{get_slack_token()}"},
-      {"Content-Type", "application/json; charset=utf-8"}
-    ]
+        {:ok, users}
 
-    case HTTPoison.get(url, headers) do
-      {:ok, %Response{status_code: 200, body: response_body}} ->
-        parsed = Jason.decode!(response_body)
-
-        if parsed["ok"] do
-          members =
-            parsed["members"]
-            |> Enum.map(
-              &%{
-                id: &1["id"],
-                name: &1["real_name"],
-                email: get_in(&1, ["profile", "email"])
-              }
-            )
-
-          {:ok, members}
-        else
-          Logger.error("Failed to get Slack users: #{parsed["error"]}")
-          {:error, parsed["error"]}
-        end
-
-      {:error, error} ->
-        Logger.error("HTTP error when getting Slack users: #{inspect(error)}")
+      {:ok, %Tesla.Env{status: 200, body: %{"ok" => false, "error" => error}}} ->
+        Logger.error("Failed to get Slack users: #{error}")
         {:error, error}
+
+      {:error, reason} ->
+        Logger.error("HTTP error when getting Slack users: #{inspect(reason)}")
+        {:error, reason}
     end
   end
 
@@ -140,8 +107,6 @@ defmodule JumpTickets.External.Slack do
   Invites users to a channel
   """
   def invite_users_to_channel(channel_id, user_ids) when is_list(user_ids) do
-    url = "#{@slack_api_url}/conversations.invite"
-
     # Slack API requires at least one user and no more than 1000
     user_ids = user_ids |> Enum.uniq() |> Enum.take(1000)
 
@@ -149,31 +114,22 @@ defmodule JumpTickets.External.Slack do
     if Enum.empty?(user_ids) do
       {:ok, "No users to invite"}
     else
-      body =
-        Jason.encode!(%{
-          channel: channel_id,
-          users: Enum.join(user_ids, ",")
-        })
+      body = %{
+        channel: channel_id,
+        users: Enum.join(user_ids, ",")
+      }
 
-      headers = [
-        {"Authorization", "Bearer #{get_slack_token()}"},
-        {"Content-Type", "application/json; charset=utf-8"}
-      ]
+      case Client.post("/conversations.invite", body) do
+        {:ok, %Tesla.Env{status: 200, body: %{"ok" => true} = response}} ->
+          {:ok, response}
 
-      case HTTPoison.post(url, body, headers) do
-        {:ok, %Response{status_code: 200, body: response_body}} ->
-          parsed = Jason.decode!(response_body)
-
-          if parsed["ok"] do
-            {:ok, parsed}
-          else
-            Logger.error("Failed to invite users to channel: #{parsed["error"]}")
-            {:error, parsed["error"]}
-          end
-
-        {:error, error} ->
-          Logger.error("HTTP error when inviting users to channel: #{inspect(error)}")
+        {:ok, %Tesla.Env{status: 200, body: %{"ok" => false, "error" => error}}} ->
+          Logger.error("Failed to invite users to channel: #{error}")
           {:error, error}
+
+        {:error, reason} ->
+          Logger.error("HTTP error when inviting users to channel: #{inspect(reason)}")
+          {:error, reason}
       end
     end
   end
@@ -182,33 +138,22 @@ defmodule JumpTickets.External.Slack do
   Posts a message to a channel
   """
   def post_message(channel_id, text) do
-    url = "#{@slack_api_url}/chat.postMessage"
+    body = %{
+      channel: channel_id,
+      text: text
+    }
 
-    body =
-      Jason.encode!(%{
-        channel: channel_id,
-        text: text
-      })
+    case Client.post("/chat.postMessage", body) do
+      {:ok, %Tesla.Env{status: 200, body: %{"ok" => true} = response}} ->
+        {:ok, response}
 
-    headers = [
-      {"Authorization", "Bearer #{get_slack_token()}"},
-      {"Content-Type", "application/json; charset=utf-8"}
-    ]
-
-    case HTTPoison.post(url, body, headers) do
-      {:ok, %Response{status_code: 200, body: response_body}} ->
-        parsed = Jason.decode!(response_body)
-
-        if parsed["ok"] do
-          {:ok, parsed}
-        else
-          Logger.error("Failed to post message: #{parsed["error"]}")
-          {:error, parsed["error"]}
-        end
-
-      {:error, error} ->
-        Logger.error("HTTP error when posting message: #{inspect(error)}")
+      {:ok, %Tesla.Env{status: 200, body: %{"ok" => false, "error" => error}}} ->
+        Logger.error("Failed to post message: #{error}")
         {:error, error}
+
+      {:error, reason} ->
+        Logger.error("HTTP error when posting message: #{inspect(reason)}")
+        {:error, reason}
     end
   end
 
@@ -216,8 +161,6 @@ defmodule JumpTickets.External.Slack do
   Gets a channel by its name
   """
   def get_channel(channel_name) do
-    url = "#{@slack_api_url}/conversations.list"
-
     # Normalize channel name to match Slack's format
     normalized_name =
       channel_name
@@ -226,45 +169,39 @@ defmodule JumpTickets.External.Slack do
       |> String.replace(~r/-+/, "-")
       |> String.trim("-")
 
-    headers = [
-      {"Authorization", "Bearer #{get_slack_token()}"},
-      {"Content-Type", "application/json; charset=utf-8"}
-    ]
+    params = %{
+      types: "public_channel",
+      limit: "1000"
+    }
 
-    params = [
-      {"types", "public_channel"},
-      {"limit", "1000"}
-    ]
+    case Client.get("/conversations.list", query: params) do
+      {:ok, %Tesla.Env{status: 200, body: %{"ok" => true, "channels" => channels}}} ->
+        # Find the channel with matching name
+        channel =
+          Enum.find(channels, fn channel ->
+            channel["name"] == normalized_name
+          end)
 
-    case HTTPoison.get(url <> "?" <> URI.encode_query(params), headers) do
-      {:ok, %Response{status_code: 200, body: response_body}} ->
-        parsed = Jason.decode!(response_body)
+        if channel do
+          team_id =
+            channel["context_team_id"] || Application.get_env(:jump_tickets, :slack)[:team_id]
 
-        if parsed["ok"] do
-          # Find the channel with matching name
-          channel =
-            Enum.find(parsed["channels"], fn channel ->
-              channel["name"] == normalized_name
-            end)
-
-          if channel do
-            {:ok,
-             %{
-               channel_id: channel["id"],
-               url:
-                 "https://app.slack.com/client/#{channel["context_team_id"] || Application.get_env(:jump_tickets, :slack)[:team_id]}/#{channel["id"]}?entry_point=nav_menu"
-             }}
-          else
-            {:error, :channel_not_found}
-          end
+          {:ok,
+           %{
+             channel_id: channel["id"],
+             url: "https://app.slack.com/client/#{team_id}/#{channel["id"]}?entry_point=nav_menu"
+           }}
         else
-          Logger.error("Failed to get Slack channels: #{parsed["error"]}")
-          {:error, parsed["error"]}
+          {:error, :channel_not_found}
         end
 
-      {:error, error} ->
-        Logger.error("HTTP error when getting Slack channels: #{inspect(error)}")
+      {:ok, %Tesla.Env{status: 200, body: %{"ok" => false, "error" => error}}} ->
+        Logger.error("Failed to get Slack channels: #{error}")
         {:error, error}
+
+      {:error, reason} ->
+        Logger.error("HTTP error when getting Slack channels: #{inspect(reason)}")
+        {:error, reason}
     end
   end
 
@@ -279,42 +216,30 @@ defmodule JumpTickets.External.Slack do
   }
   """
   def list_channel_users(channel_id) do
-    url = "#{@slack_api_url}/conversations.members"
+    params = %{channel: channel_id}
 
-    headers = [
-      {"Authorization", "Bearer #{get_slack_token()}"},
-      {"Content-Type", "application/json; charset=utf-8"}
-    ]
+    case Client.get("/conversations.members", query: params) do
+      {:ok, %Tesla.Env{status: 200, body: %{"ok" => true, "members" => member_ids}}} ->
+        # Retrieve all users and filter by member IDs.
+        case get_all_users() do
+          {:ok, users} ->
+            channel_users =
+              users
+              |> Enum.filter(fn user -> user[:id] in member_ids end)
 
-    params = [{"channel", channel_id}]
+            {:ok, channel_users}
 
-    case HTTPoison.get(url <> "?" <> URI.encode_query(params), headers) do
-      {:ok, %Response{status_code: 200, body: response_body}} ->
-        parsed = Jason.decode!(response_body)
-
-        if parsed["ok"] do
-          member_ids = parsed["members"] || []
-
-          # Retrieve all users and filter by member IDs.
-          case get_all_users() do
-            {:ok, users} ->
-              channel_users =
-                users
-                |> Enum.filter(fn user -> user[:id] in member_ids end)
-
-              {:ok, channel_users}
-
-            {:error, error} ->
-              {:error, error}
-          end
-        else
-          Logger.error("Failed to list channel users: #{parsed["error"]}")
-          {:error, parsed["error"]}
+          {:error, error} ->
+            {:error, error}
         end
 
-      {:error, error} ->
-        Logger.error("HTTP error when listing channel users: #{inspect(error)}")
+      {:ok, %Tesla.Env{status: 200, body: %{"ok" => false, "error" => error}}} ->
+        Logger.error("Failed to list channel users: #{error}")
         {:error, error}
+
+      {:error, reason} ->
+        Logger.error("HTTP error when listing channel users: #{inspect(reason)}")
+        {:error, reason}
     end
   end
 
@@ -322,33 +247,62 @@ defmodule JumpTickets.External.Slack do
   Sets the topic of the given channel
   """
   def set_topic(channel_id, topic) do
-    url = "#{@slack_api_url}/conversations.setTopic"
+    body = %{
+      channel: channel_id,
+      topic: topic
+    }
 
-    body =
-      Jason.encode!(%{
-        channel: channel_id,
-        topic: topic
-      })
+    case Client.post("/conversations.setTopic", body) do
+      {:ok, %Tesla.Env{status: 200, body: %{"ok" => true} = response}} ->
+        {:ok, response}
 
-    headers = [
-      {"Authorization", "Bearer #{get_slack_token()}"},
-      {"Content-Type", "application/json; charset=utf-8"}
-    ]
-
-    case HTTPoison.post(url, body, headers) do
-      {:ok, %Response{status_code: 200, body: response_body}} ->
-        parsed = Jason.decode!(response_body)
-
-        if parsed["ok"] do
-          {:ok, parsed}
-        else
-          Logger.error("Failed to set channel topic: #{parsed["error"]}")
-          {:error, parsed["error"]}
-        end
-
-      {:error, error} ->
-        Logger.error("HTTP error when setting channel topic: #{inspect(error)}")
+      {:ok, %Tesla.Env{status: 200, body: %{"ok" => false, "error" => error}}} ->
+        Logger.error("Failed to set channel topic: #{error}")
         {:error, error}
+
+      {:error, reason} ->
+        Logger.error("HTTP error when setting channel topic: #{inspect(reason)}")
+        {:error, reason}
     end
+  end
+end
+
+defmodule JumpTickets.External.Slack.Client do
+  @moduledoc """
+  Tesla HTTP client for Slack API
+  """
+  use Tesla
+
+  plug Tesla.Middleware.BaseUrl, "https://slack.com/api"
+
+  plug Tesla.Middleware.Headers, [
+    {"Content-Type", "application/json; charset=utf-8"}
+  ]
+
+  plug Tesla.Middleware.JSON
+  plug Tesla.Middleware.BearerAuth, token: get_token()
+
+  plug Tesla.Middleware.Retry,
+    delay: 60_000,
+    max_retries: 8,
+    max_delay: 180_000,
+    should_retry: fn
+      {:ok, %{status: 429}} ->
+        true
+
+      {:ok, %{status: 200, body: %{"ok" => false, "error" => "ratelimited"}}} ->
+        true
+
+      {:error, reason} ->
+        true
+
+      _other ->
+        false
+    end
+
+  plug Tesla.Middleware.Logger
+
+  defp get_token do
+    Application.get_env(:jump_tickets, :slack)[:bot_token]
   end
 end
